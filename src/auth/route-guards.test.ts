@@ -1,10 +1,17 @@
-import { createMemoryRouter, redirect, type RouteObject } from 'react-router'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { createMemoryRouter } from 'react-router'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Me } from '../api/contract'
 import { MOCK_USER } from '../mocks/state'
-import { DEFAULT_REDIRECT, LOGIN_PATH } from './redirect'
-import { redirectIfSignedIn, requireUser } from './route-guards'
+import { routes } from '../routes'
 import { session } from './session'
+
+vi.mock('../api/client', async () => {
+  const { createHttpClient } = await import('../api/http-client')
+  const { getFingerprint: fingerprint } = await import('./fingerprint')
+  const client = createHttpClient({ baseUrl: 'http://localhost' })
+  client.setFingerprintProvider(fingerprint)
+  return { httpClient: client }
+})
 
 const user: Me = {
   id: MOCK_USER.id,
@@ -13,24 +20,6 @@ const user: Me = {
   last_name: MOCK_USER.last_name,
   name: 'Demo User',
 }
-
-const routes: RouteObject[] = [
-  {
-    children: [
-      { path: LOGIN_PATH, loader: redirectIfSignedIn },
-      {
-        id: 'protected',
-        loader: requireUser,
-        children: [
-          { index: true, loader: () => redirect(DEFAULT_REDIRECT) },
-          { path: 'webhooks' },
-          { path: 'webhooks/:id' },
-        ],
-      },
-      { path: '*', loader: () => redirect(DEFAULT_REDIRECT) },
-    ],
-  },
-]
 
 async function settle(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
@@ -85,5 +74,29 @@ describe('route guards', () => {
 
     expect(await settledUrl('/')).toBe('/webhooks')
     expect(await settledUrl('/nope')).toBe('/webhooks')
+  })
+})
+
+describe('webhooks list url', () => {
+  beforeEach(() => {
+    session.clear()
+  })
+
+  test('a signed in non canonical list url is canonicalized before render', async () => {
+    session.start(user)
+
+    expect(await settledUrl('/webhooks?page=1')).toBe('/webhooks')
+    expect(await settledUrl('/webhooks?page=abc&search=hook')).toBe('/webhooks?search=hook')
+    expect(await settledUrl('/webhooks?search=hook&page=2&foo=1')).toBe('/webhooks?page=2&search=hook')
+  })
+
+  test('a signed in canonical list url stays put', async () => {
+    session.start(user)
+
+    expect(await settledUrl('/webhooks?page=2&search=hook')).toBe('/webhooks?page=2&search=hook')
+  })
+
+  test('a signed out non canonical list url goes to login with the canonical target', async () => {
+    expect(await settledUrl('/webhooks?page=0&search=hook')).toBe('/login?redirectTo=%2Fwebhooks%3Fsearch%3Dhook')
   })
 })
