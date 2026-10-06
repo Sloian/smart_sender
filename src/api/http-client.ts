@@ -39,12 +39,15 @@ function reportAsync(error: unknown) {
   })
 }
 
-async function readBody(response: Response): Promise<unknown> {
+const isJson = (response: Response) => response.headers.get('Content-Type')?.includes('json') ?? false
+
+async function readBody(response: Response, strict = false): Promise<unknown> {
   const text = await response.text()
   if (!text) return undefined
   try {
     return JSON.parse(text) as unknown
-  } catch {
+  } catch (error) {
+    if (strict && isJson(response)) throw error
     return undefined
   }
 }
@@ -157,7 +160,7 @@ export function createHttpClient(config: HttpClientConfig) {
       })
 
       if (response.ok) {
-        const body = await readBody(response)
+        const body = await readBody(response, true)
         return options.schema ? options.schema.parse(body) : (body as T)
       }
 
@@ -190,8 +193,14 @@ export function createHttpClient(config: HttpClientConfig) {
     }
   }
 
+  function request<T>(path: string, options: RequestOptions<T> & { schema: ZodType<T> }): Promise<T>
+  function request(path: string, options?: Omit<RequestOptions<unknown>, 'schema'>): Promise<unknown>
+  function request(path: string, options: RequestOptions<unknown> = {}): Promise<unknown> {
+    return send(path, options)
+  }
+
   return {
-    request: send,
+    request,
     invalidateSession,
     setFingerprintProvider(provider: () => string) {
       fingerprint = provider

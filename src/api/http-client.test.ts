@@ -223,6 +223,23 @@ describe('transport and csrf', () => {
     expect(wire).toEqual([])
   })
 
+  test('an unparsable json success body rejects instead of resolving to undefined', async () => {
+    await signIn()
+    server.use(
+      http.get(
+        '*/v1/me',
+        () => new HttpResponse('{"id":', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        { once: true },
+      ),
+      http.get('*/v1/webhooks/1', () => new HttpResponse('ok', { headers: { 'Content-Type': 'text/plain' } }), {
+        once: true,
+      }),
+    )
+
+    await expect(client.request('/v1/me')).rejects.toBeInstanceOf(SyntaxError)
+    await expect(client.request('/v1/webhooks/1')).resolves.toBeUndefined()
+  })
+
   test('query values are sent as search params and empty ones are omitted', async () => {
     await signIn()
     const searches: string[] = []
