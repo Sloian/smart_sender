@@ -11,10 +11,14 @@ async function enableMocking(): Promise<void> {
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
 
-void enableMocking().then(() => {
-  createRoot(root).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
-})
+void enableMocking()
+  .catch((error: unknown) => {
+    console.error(error)
+  })
+  .finally(() => {
+    createRoot(root).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+  })
