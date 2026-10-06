@@ -16,28 +16,34 @@ export interface PathLike {
 
 function isLoginPath(pathname: string): boolean {
   try {
-    return decodeURIComponent(pathname).toLowerCase().replace(/\/+$/, '') === LOGIN_PATH
+    const normalized = decodeURIComponent(pathname).toLowerCase().replace(/\/+$/, '')
+    return normalized === LOGIN_PATH
   } catch {
     return true
   }
 }
 
 export function safeRedirectPath(value: string | null | undefined): string {
-  if (!value?.startsWith('/') || !URL.canParse(value, PARSE_BASE)) return DEFAULT_REDIRECT
+  if (value === null || value === undefined) return DEFAULT_REDIRECT
+  if (!value.startsWith('/')) return DEFAULT_REDIRECT
+  if (!URL.canParse(value, PARSE_BASE)) return DEFAULT_REDIRECT
   const url = new URL(value, PARSE_BASE)
-  if (url.origin !== PARSE_BASE || isLoginPath(url.pathname)) return DEFAULT_REDIRECT
+  if (url.origin !== PARSE_BASE) return DEFAULT_REDIRECT
+  if (isLoginPath(url.pathname)) return DEFAULT_REDIRECT
   return `${url.pathname}${url.search}${url.hash}`
 }
 
 export function loginPath({ pathname, search, hash }: PathLike, reason?: LoginReason): string {
   const params = new URLSearchParams()
   if (isLoginPath(pathname)) {
-    const target = new URLSearchParams(search).get(REDIRECT_PARAM)
+    const loginParams = new URLSearchParams(search)
+    const target = loginParams.get(REDIRECT_PARAM)
     if (target !== null) params.set(REDIRECT_PARAM, target)
   } else if (pathname !== '/') {
     params.set(REDIRECT_PARAM, `${pathname}${search}${hash}`)
   }
   if (reason) params.set(REASON_PARAM, reason)
   const query = params.toString()
-  return query ? `${LOGIN_PATH}?${query}` : LOGIN_PATH
+  if (query === '') return LOGIN_PATH
+  return `${LOGIN_PATH}?${query}`
 }

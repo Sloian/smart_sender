@@ -33,22 +33,36 @@ async function endLocalSession(navigate: NavigateTo, to: string): Promise<void> 
 
 let pendingSignOut: Promise<void> | null = null
 
+async function revokeQuietly(timeoutMs: number): Promise<void> {
+  const signal = AbortSignal.timeout(timeoutMs)
+  try {
+    await revokeSession(signal)
+  } catch {
+    return
+  }
+}
+
 async function runSignOut(navigate: NavigateTo, revokeTimeoutMs: number): Promise<void> {
   httpClient.invalidateSession()
-  await revokeSession(AbortSignal.timeout(revokeTimeoutMs)).catch(() => undefined)
+  await revokeQuietly(revokeTimeoutMs)
   await endLocalSession(navigate, LOGIN_PATH)
 }
 
 export function signOut(navigate: NavigateTo, { revokeTimeoutMs = REVOKE_TIMEOUT_MS }: SignOutOptions = {}): Promise<void> {
-  pendingSignOut ??= runSignOut(navigate, revokeTimeoutMs).finally(() => {
-    pendingSignOut = null
-  })
+  if (pendingSignOut === null) {
+    pendingSignOut = runSignOut(navigate, revokeTimeoutMs).finally(() => {
+      pendingSignOut = null
+    })
+  }
   return pendingSignOut
 }
 
 export function subscribeToSessionEnd(navigate: NavigateTo, currentLocation: () => PathLike): () => void {
   return httpClient.onSessionEnd(() => {
-    if (pendingSignOut || !session.user()) return
-    void endLocalSession(navigate, loginPath(currentLocation(), SESSION_EXPIRED_REASON))
+    if (pendingSignOut) return
+    if (!session.user()) return
+    const location = currentLocation()
+    const target = loginPath(location, SESSION_EXPIRED_REASON)
+    void endLocalSession(navigate, target)
   })
 }

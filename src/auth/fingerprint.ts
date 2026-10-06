@@ -10,7 +10,9 @@ export function generateFingerprint(): string {
 
 function readStored(storage: FingerprintStorage): string | null {
   const stored = storage.getItem(FINGERPRINT_STORAGE_KEY)
-  return stored !== null && FINGERPRINT_PATTERN.test(stored) ? stored : null
+  if (stored === null) return null
+  if (!FINGERPRINT_PATTERN.test(stored)) return null
+  return stored
 }
 
 function loadOrCreate(getStorage: () => FingerprintStorage | undefined): string {
@@ -30,7 +32,9 @@ function loadOrCreate(getStorage: () => FingerprintStorage | undefined): string 
 export function createFingerprintProvider(getStorage: () => FingerprintStorage | undefined): () => string {
   let fingerprint: string | undefined
   return () => {
-    fingerprint ??= loadOrCreate(getStorage)
+    if (fingerprint === undefined) {
+      fingerprint = loadOrCreate(getStorage)
+    }
     return fingerprint
   }
 }

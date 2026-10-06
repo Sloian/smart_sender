@@ -5,10 +5,18 @@ import { session } from './session'
 
 export function requireUser({ request }: LoaderFunctionArgs): Me | Response {
   const user = session.user()
-  return user ?? redirect(loginPath(new URL(request.url)))
+  if (!user) {
+    const requestedUrl = new URL(request.url)
+    const target = loginPath(requestedUrl)
+    return redirect(target)
+  }
+  return user
 }
 
 export function redirectIfSignedIn({ request }: LoaderFunctionArgs): Response | null {
   if (!session.user()) return null
-  return redirect(safeRedirectPath(new URL(request.url).searchParams.get(REDIRECT_PARAM)))
+  const requestedUrl = new URL(request.url)
+  const redirectTo = requestedUrl.searchParams.get(REDIRECT_PARAM)
+  const target = safeRedirectPath(redirectTo)
+  return redirect(target)
 }
