@@ -13,4 +13,24 @@ const cacheOnlyRequests = http.get(
   ({ request }) => fetch(bypass(request.url)),
 )
 
-export const worker = setupWorker(cacheOnlyRequests, ...handlers)
+const worker = setupWorker(cacheOnlyRequests, ...handlers)
+
+const ACTIVATE_MESSAGE = 'MOCK_ACTIVATE'
+const REACTIVATE_INTERVAL_MS = 5_000
+
+function keepMockingActive(registration: ServiceWorkerRegistration): void {
+  const activate = () => {
+    registration.active?.postMessage(ACTIVATE_MESSAGE)
+  }
+  window.addEventListener('focus', activate)
+  window.addEventListener('pageshow', activate)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') activate()
+  })
+  window.setInterval(activate, REACTIVATE_INTERVAL_MS)
+}
+
+export async function startMocking(): Promise<void> {
+  const registration = await worker.start({ onUnhandledFrame: 'bypass', quiet: true })
+  if (registration) keepMockingActive(registration)
+}
