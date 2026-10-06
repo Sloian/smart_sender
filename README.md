@@ -196,7 +196,7 @@ Tests sit next to the code as `*.test.ts` / `*.test.tsx`.
 - The repository has no browser or end-to-end test suite. All repository tests run in Node, and no page component is rendered in a test. Browser flows were checked with throwaway Playwright scripts that are not part of the repository: login, return-to URL, logout, session renewal, list, search, history, edit, 422, 404 and the narrow layout.
 - A theoretical race remains in the search debounce: the 300 ms timer could fire in the sub-frame gap between a Back/Forward popstate and React committing the new location. It was never observed.
 - The visual design is deliberately minimal (Mantine defaults), because the task grades logic rather than visuals.
-- There is no code splitting, so `npm run build` prints Vite's warning about a chunk larger than 500 kB.
+- There is no route-level code splitting (only the mock is loaded as a separate chunk), so `npm run build` prints Vite's warning about a chunk larger than 500 kB.
 - Creating, deleting and toggling webhooks is not implemented, because the contract has no such endpoints.
 
 ## Ideas for v2
