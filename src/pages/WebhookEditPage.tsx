@@ -1,9 +1,11 @@
-import { Alert, Button, EmptyState, Group, Loader, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Alert, Button, EmptyState, Group, Stack, TextInput, Title } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Webhook } from '../api/contract'
+import { LoadError } from '../components/LoadError'
+import { LoadingState } from '../components/LoadingState'
 import { applyServerErrors } from '../lib/server-errors'
 import { isFromList, listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
 import { applyWebhookUpdate, webhookDetailView, webhookQuery } from '../webhooks/webhook-queries'
@@ -43,33 +45,18 @@ function WebhookEditor({ id, backTo }: { id: number; backTo: string }) {
   const { data, error, isFetching, refetch } = useQuery(webhookQuery(id))
   const view = webhookDetailView({ data, error })
 
+  function retry() {
+    void refetch()
+  }
+
   switch (view.kind) {
     case 'loading':
-      return (
-        <Stack role="status" align="center" py="xl">
-          <Loader />
-          <Text>Loading webhook…</Text>
-        </Stack>
-      )
+      return <LoadingState label="Loading webhook…" />
     case 'not-found':
       return <WebhookNotFound backTo={backTo} />
     case 'error':
       return (
-        <Alert color="red" title="Could not load the webhook">
-          <Stack align="flex-start">
-            <Text size="sm">{view.message}</Text>
-            <Button
-              variant="light"
-              color="red"
-              loading={isFetching}
-              onClick={() => {
-                void refetch()
-              }}
-            >
-              Retry
-            </Button>
-          </Stack>
-        </Alert>
+        <LoadError title="Could not load the webhook" message={view.message} retrying={isFetching} onRetry={retry} />
       )
     case 'ready':
       return <WebhookEditForm webhook={view.webhook} backTo={backTo} />

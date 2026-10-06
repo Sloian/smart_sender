@@ -1,12 +1,10 @@
 import {
-  Alert,
   Anchor,
   Badge,
   Button,
   CloseButton,
   EmptyState,
   Group,
-  Loader,
   Pagination,
   Stack,
   Table,
@@ -18,6 +16,8 @@ import { useDebouncedCallback } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigationType, useSearchParams } from 'react-router'
+import { LoadError } from '../components/LoadError'
+import { LoadingState } from '../components/LoadingState'
 import { editPath, FROM_LIST_STATE, listPath, listSearch, parseListParams, toSearchParams } from '../webhooks/list-params'
 import { draftAfterNavigation, isOwnSearchCommit, searchCommitNavigation } from '../webhooks/search-history'
 import { webhookListQuery, webhookListView } from '../webhooks/webhook-queries'
@@ -66,6 +66,10 @@ export function WebhooksPage() {
     commitSearch('', false)
   }
 
+  function retry() {
+    void refetch()
+  }
+
   return (
     <Stack>
       <Title order={2}>Webhooks</Title>
@@ -79,28 +83,9 @@ export function WebhooksPage() {
         rightSectionPointerEvents="all"
         rightSection={searchValue === '' ? null : <CloseButton aria-label="Clear search" onClick={clearSearch} />}
       />
-      {view.kind === 'loading' && (
-        <Stack role="status" align="center" py="xl">
-          <Loader />
-          <Text>Loading webhooks…</Text>
-        </Stack>
-      )}
+      {view.kind === 'loading' && <LoadingState label="Loading webhooks…" />}
       {view.kind === 'error' && (
-        <Alert color="red" title="Could not load webhooks">
-          <Stack align="flex-start">
-            <Text size="sm">{view.message}</Text>
-            <Button
-              variant="light"
-              color="red"
-              loading={isFetching}
-              onClick={() => {
-                void refetch()
-              }}
-            >
-              Retry
-            </Button>
-          </Stack>
-        </Alert>
+        <LoadError title="Could not load webhooks" message={view.message} retrying={isFetching} onRetry={retry} />
       )}
       {view.kind === 'empty' && params.page > 1 && <Navigate to={listPath({ ...params, page: 1 })} replace />}
       {view.kind === 'empty' && (
