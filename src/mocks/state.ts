@@ -9,7 +9,7 @@ export const MOCK_USER = {
 }
 
 export const CSRF_TOKEN = 'mock-csrf-token-7f3a9c'
-export const DEFAULT_SESSION_TTL_MS = 30_000
+const DEFAULT_SESSION_TTL_MS = 30_000
 
 interface Session {
   fingerprint: string

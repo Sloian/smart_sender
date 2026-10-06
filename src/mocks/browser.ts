@@ -4,13 +4,20 @@ import { handlers } from './handlers'
 
 const MOCKED_PREFIXES = ['/csrf', '/auth/', '/v1/']
 
+function isCacheOnlyAppRequest(request: Request): boolean {
+  if (request.cache !== 'only-if-cached') return false
+  const url = new URL(request.url)
+  if (url.origin !== window.location.origin) return false
+  const isMockedPath = MOCKED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  return !isMockedPath
+}
+
 const cacheOnlyRequests = http.get(
+  ({ request }) => isCacheOnlyAppRequest(request),
   ({ request }) => {
-    if (request.cache !== 'only-if-cached') return false
-    const url = new URL(request.url)
-    return url.origin === window.location.origin && !MOCKED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+    const passthrough = bypass(request.url)
+    return fetch(passthrough)
   },
-  ({ request }) => fetch(bypass(request.url)),
 )
 
 const worker = setupWorker(cacheOnlyRequests, ...handlers)
