@@ -324,6 +324,11 @@ const idsOf = (page: { data: { id: number }[] }) => page.data.map((webhook) => w
 
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index)
 
+async function allIds() {
+  const pages = await Promise.all(['1', '2', '3'].map((page) => list({ page })))
+  return pages.flatMap(idsOf)
+}
+
 const getWebhook = (id: string) => call('GET', `/v1/webhooks/${id}`)
 
 const updateWebhook = (id: string, body: unknown, csrf?: string | false) =>
@@ -371,12 +376,11 @@ describe('webhook list', () => {
     expect(idsOf(page)).toEqual(range(1, 10))
   })
 
-  test('limit sets the page size and limitation', async () => {
+  test.each(['5', '10', '100', 'abc'])('limit %s keeps the contract page size of 10', async (limit) => {
     await signIn()
-    const page = await list({ limit: '5' })
-    expect(page.data).toHaveLength(5)
-    expect(page.paging.results.limitation).toBe(5)
-    expect(page.paging.pages.last).toBe(6)
+    const page = await list({ limit })
+    expect(idsOf(page)).toEqual(range(1, 10))
+    expect(page.paging).toEqual({ pages: { current: 1, last: 3 }, results: { total: 28, limitation: 10 } })
   })
 
   test('search is case-insensitive', async () => {
@@ -417,8 +421,8 @@ describe('webhook list', () => {
 
   test('order is stable and ascending by id', async () => {
     await signIn()
-    const first = idsOf(await list({ limit: '100' }))
-    const second = idsOf(await list({ limit: '100' }))
+    const first = await allIds()
+    const second = await allIds()
     expect(second).toEqual(first)
     expect(first).toEqual(range(1, 28))
   })
@@ -426,7 +430,7 @@ describe('webhook list', () => {
   test('order is unchanged after an update', async () => {
     await signIn()
     expect((await updateWebhook('5', { name: 'Aaa first', url: 'https://ok.dev' })).status).toBe(200)
-    expect(idsOf(await list({ limit: '100' }))).toEqual(range(1, 28))
+    expect(await allIds()).toEqual(range(1, 28))
   })
 
   test('the list requires a session', async () => {

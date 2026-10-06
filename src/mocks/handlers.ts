@@ -49,8 +49,7 @@ const asString = (value: unknown) => (typeof value === 'string' ? value : '')
 
 const emptyResponse = (status: 200 | 204) => new HttpResponse(null, { status })
 
-const DEFAULT_LIMIT = 10
-const MAX_LIMIT = 100
+const PAGE_SIZE = 10
 
 const parseIntParam = (value: string | null) => Number.parseInt(value ?? '', 10)
 
@@ -128,14 +127,13 @@ export const handlers = [
     if (auth) return auth
     const params = new URL(request.url).searchParams
     const page = Math.max(1, parseIntParam(params.get('page')) || 1)
-    const limit = Math.min(MAX_LIMIT, Math.max(1, parseIntParam(params.get('limit')) || DEFAULT_LIMIT))
     const search = (params.get('search') ?? '').toLowerCase()
     const filtered = state.webhooks.filter((webhook) => webhook.name.toLowerCase().includes(search))
     const body: WebhookList = {
-      data: filtered.slice((page - 1) * limit, page * limit),
+      data: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
       paging: {
-        pages: { current: page, last: Math.max(1, Math.ceil(filtered.length / limit)) },
-        results: { total: filtered.length, limitation: limit },
+        pages: { current: page, last: Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)) },
+        results: { total: filtered.length, limitation: PAGE_SIZE },
       },
     }
     return HttpResponse.json(body)
