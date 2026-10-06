@@ -4,10 +4,9 @@ A React + TypeScript (strict) SPA for the Smart Sender Senior Frontend test task
 
 ## Run
 
-Requires Node 24 (pinned in `.nvmrc`).
+Requires Node 22.22+ (CI uses Node 24 from `.nvmrc`).
 
 ```bash
-nvm use
 npm ci
 npm run dev
 ```
