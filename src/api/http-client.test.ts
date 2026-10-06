@@ -426,6 +426,82 @@ describe('session rotation', () => {
     expect(sessionEnd).toHaveBeenCalledTimes(1)
   })
 
+  test('a request sent before the session ended is not replayed after a new sign-in and rotate', async () => {
+    await signIn()
+    let arrived = false
+    let released = false
+    server.use(
+      http.put(
+        '*/v1/webhooks/:id',
+        async () => {
+          arrived = true
+          await until(() => released)
+          return unauthenticated()
+        },
+        { once: true },
+      ),
+    )
+
+    const stale = client
+      .request('/v1/webhooks/1', { method: 'PUT', body: validUpdate })
+      .catch((caught: unknown) => caught)
+    await until(() => arrived)
+    mockControl.revokeSession()
+    await expect(client.request('/v1/me')).rejects.toMatchObject(sessionExpiredError)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+    await login()
+    mockControl.expireSession()
+    await client.request('/v1/me', { schema: meSchema })
+    released = true
+
+    expect(await stale).toMatchObject(sessionExpiredError)
+    expect(wire.map((entry) => `${entry.method} ${entry.path} ${entry.status}`)).toEqual([
+      'GET /v1/me 401',
+      'POST /auth/token/rotate 400',
+      'POST /auth/login 200',
+      'POST /auth/token/issue 200',
+      'GET /v1/me 401',
+      'POST /auth/token/rotate 200',
+      'GET /v1/me 200',
+      'PUT /v1/webhooks/1 401',
+    ])
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('a rotate that settles after the session ended does not revive the session', async () => {
+    await signIn()
+    mockControl.expireSession()
+    let meCalls = 0
+    let rotateCalls = 0
+    let staleRotateArrived = false
+    server.use(
+      http.get('*/v1/me', async () => {
+        meCalls += 1
+        if (meCalls === 2) await until(() => staleRotateArrived)
+        return unauthenticated()
+      }),
+      http.post('*/auth/token/rotate', async () => {
+        rotateCalls += 1
+        if (rotateCalls === 2) {
+          staleRotateArrived = true
+          await until(() => sessionEnd.mock.calls.length > 0)
+        }
+        return undefined
+      }),
+      http.get('*/v1/webhooks', unauthenticated, { once: true }),
+    )
+
+    const me = client.request('/v1/me').catch((caught: unknown) => caught)
+    await until(() => meCalls === 2)
+    const list = client.request('/v1/webhooks').catch((caught: unknown) => caught)
+
+    expect(await me).toMatchObject(sessionExpiredError)
+    expect(await list).toMatchObject(sessionExpiredError)
+    expect(statusesOf('POST', '/auth/token/rotate')).toEqual([200, 200])
+    expect(statusesOf('GET', '/v1/webhooks')).toEqual([401])
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
   test('an unsubscribed listener is not notified', async () => {
     const removed = vi.fn<() => void>()
     const unsubscribe = client.onSessionEnd(removed)

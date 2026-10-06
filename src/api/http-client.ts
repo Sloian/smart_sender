@@ -46,7 +46,7 @@ export function createHttpClient(config: HttpClientConfig) {
   let csrfGeneration = 0
   let rotateRequest: Promise<void> | null = null
   let sessionGeneration = 0
-  let lastTransition: 'rotated' | 'ended' = 'rotated'
+  let endedAtGeneration = 0
 
   const doFetch = (url: URL, init: RequestInit) => (config.fetch ?? globalThis.fetch)(url, init)
 
@@ -90,19 +90,20 @@ export function createHttpClient(config: HttpClientConfig) {
 
   function endSession() {
     sessionGeneration += 1
-    lastTransition = 'ended'
+    endedAtGeneration = sessionGeneration
     for (const listener of listeners) listener()
   }
 
   function rotate(): Promise<void> {
+    const startedAt = sessionGeneration
     rotateRequest ??= send<unknown>(ROTATE_PATH, { method: 'POST', body: { fingerprint: fingerprint() } })
       .then(
         () => {
+          if (endedAtGeneration > startedAt) throw new ApiError(401, 'AuthenticationException', 'Session ended.')
           sessionGeneration += 1
-          lastTransition = 'rotated'
         },
         (error: unknown) => {
-          endSession()
+          if (endedAtGeneration <= startedAt) endSession()
           throw error
         },
       )
@@ -146,15 +147,13 @@ export function createHttpClient(config: HttpClientConfig) {
       }
 
       if (response.status === 401 && isRotatable(path)) {
+        if (generationAtSend < endedAtGeneration) throw error
         if (authRetried) {
           if (generationAtSend === sessionGeneration) endSession()
           throw error
         }
         authRetried = true
-        if (generationAtSend !== sessionGeneration && !rotateRequest) {
-          if (lastTransition === 'ended') throw error
-          continue
-        }
+        if (generationAtSend !== sessionGeneration && !rotateRequest) continue
         await (rotateRequest ?? rotate()).catch(() => {
           throw error
         })
