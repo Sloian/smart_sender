@@ -6,6 +6,7 @@ import { AppLayout } from './components/AppLayout'
 import { FullPageLoader } from './components/FullPageLoader'
 import { RouteError } from './components/RouteError'
 import { LoginPage } from './pages/LoginPage'
+import { WebhooksPage } from './pages/WebhooksPage'
 import { canonicalListUrl } from './webhooks/list-params'
 
 export const routes: RouteObject[] = [
@@ -20,7 +21,7 @@ export const routes: RouteObject[] = [
         Component: AppLayout,
         children: [
           { index: true, loader: () => redirect(DEFAULT_REDIRECT) },
-          { path: 'webhooks', loader: canonicalListUrl, element: <Title order={2}>Webhooks</Title> },
+          { path: 'webhooks', loader: canonicalListUrl, Component: WebhooksPage },
           { path: 'webhooks/:id', element: <Title order={2}>Webhook</Title> },
         ],
       },
