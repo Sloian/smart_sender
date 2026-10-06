@@ -14,6 +14,7 @@ export interface SignOutOptions {
 const REVOKE_TIMEOUT_MS = 5_000
 
 export async function signIn(credentials: Credentials): Promise<Me> {
+  httpClient.invalidateSession()
   const deviceSessionToken = await login(credentials)
   await issueSession(deviceSessionToken)
   const user = await fetchMe()

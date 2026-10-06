@@ -242,6 +242,50 @@ describe('auth service', () => {
     expect(session.user()).toBeNull()
   })
 
+  test('a renewal from the previous session that fails after a new sign in keeps the new session', async () => {
+    const expiredNavigate = navigateSpy()
+    unsubscribe = subscribeToSessionEnd(expiredNavigate, () => webhooksLocation)
+    await signIn(credentials)
+    const revokeReceived = deferred()
+    const releaseRevoke = deferred()
+    const rotateReceived = deferred()
+    const releaseRotate = deferred()
+    server.use(
+      http.post(
+        '*/auth/token/revoke',
+        async () => {
+          mockControl.revokeSession()
+          revokeReceived.resolve()
+          await releaseRevoke.promise
+        },
+        { once: true },
+      ),
+      http.post(
+        '*/auth/token/rotate',
+        async () => {
+          rotateReceived.resolve()
+          await releaseRotate.promise
+          return HttpResponse.json({ error: { type: 'BadRequestException', message: 'Bad request.' } }, { status: 400 })
+        },
+        { once: true },
+      ),
+    )
+
+    const signingOut = signOut(navigateSpy())
+    await revokeReceived.promise
+    const staleMe = fetchMe().catch((reason: unknown) => reason)
+    await rotateReceived.promise
+    releaseRevoke.resolve()
+    await signingOut
+    await signIn(credentials)
+    releaseRotate.resolve()
+
+    expect(await staleMe).toMatchObject({ status: 401 })
+    expect(expiredNavigate).not.toHaveBeenCalled()
+    expect(session.user()).toEqual(expectedUser)
+    await expect(fetchMe()).resolves.toEqual(expectedUser)
+  })
+
   test('sign out runs once when it is requested again while in progress', async () => {
     await signIn(credentials)
     const navigate = navigateSpy()
