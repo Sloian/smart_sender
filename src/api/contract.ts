@@ -39,7 +39,7 @@ export const loginResponseSchema = z.object({
   device_session_token: z.string().min(1),
 })
 
-export const fieldErrorsSchema = z.record(z.string(), z.array(z.string()))
+const fieldErrorsSchema = z.record(z.string(), z.array(z.string()))
 
 export const errorEnvelopeSchema = z.object({
   error: z.object({
@@ -92,10 +92,4 @@ export interface FingerprintRequest {
 export interface WebhookUpdateRequest {
   name: string
   url: string
-}
-
-export interface WebhookListQuery {
-  page?: number
-  limit?: number
-  search?: string
 }

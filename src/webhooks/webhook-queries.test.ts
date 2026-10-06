@@ -1,9 +1,8 @@
 import { keepPreviousData, QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { ApiError } from '../api/api-error'
+import { ApiError, GENERIC_ERROR } from '../api/api-error'
 import type { Webhook, WebhookList } from '../api/contract'
 import { issueSession, login } from '../auth/auth-api'
-import { GENERIC_ERROR } from '../lib/server-errors'
 import { MOCK_USER } from '../mocks/state'
 import { setupMockServer } from '../test/mock-server'
 import {

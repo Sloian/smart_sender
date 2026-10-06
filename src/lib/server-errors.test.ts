@@ -1,7 +1,7 @@
 import type { UseFormSetError } from 'react-hook-form'
 import { describe, expect, test, vi } from 'vitest'
-import { ApiError } from '../api/api-error'
-import { applyServerErrors, GENERIC_ERROR } from './server-errors'
+import { ApiError, GENERIC_ERROR } from '../api/api-error'
+import { applyServerErrors } from './server-errors'
 
 interface Values {
   email: string

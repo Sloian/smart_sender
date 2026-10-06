@@ -1,7 +1,12 @@
 import type { FieldValues, Path, UseFormSetError } from 'react-hook-form'
-import { isApiError } from '../api/api-error'
+import { errorMessage, isApiError } from '../api/api-error'
 
-export const GENERIC_ERROR = 'Something went wrong. Please try again.'
+function joinMessages(messages: readonly string[] | undefined, fallback: string): string {
+  if (messages === undefined) return fallback
+  const joined = messages.join(' ')
+  if (joined === '') return fallback
+  return joined
+}
 
 export function applyServerErrors<T extends FieldValues>(
   error: unknown,
@@ -9,20 +14,21 @@ export function applyServerErrors<T extends FieldValues>(
   setError: UseFormSetError<T>,
 ): void {
   if (!isApiError(error) || error.type !== 'ValidationException') {
-    setError('root.server', { type: 'server', message: isApiError(error) ? error.message : GENERIC_ERROR })
+    setError('root.server', { type: 'server', message: errorMessage(error) })
     return
   }
   const matched = fields.filter((field) => Object.hasOwn(error.fieldErrors, field))
   matched.forEach((field, index) => {
-    const message = error.fieldErrors[field]?.join(' ') || error.message
+    const message = joinMessages(error.fieldErrors[field], error.message)
     setError(field, { type: 'server', message }, { shouldFocus: index === 0 })
   })
   const matchedKeys: readonly string[] = matched
   const unmatched = Object.entries(error.fieldErrors)
     .filter(([field]) => !matchedKeys.includes(field))
     .map(([, messages]) => messages.join(' '))
-    .filter(Boolean)
-  if (unmatched.length > 0 || matched.length === 0) {
-    setError('root.server', { type: 'server', message: unmatched.join(' ') || error.message })
+    .filter((message) => message !== '')
+  const needsRootMessage = unmatched.length > 0 || matched.length === 0
+  if (needsRootMessage) {
+    setError('root.server', { type: 'server', message: joinMessages(unmatched, error.message) })
   }
 }

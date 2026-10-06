@@ -4,6 +4,14 @@ export type ApiErrorType = ErrorType | 'UnknownError'
 
 export const API_UNAVAILABLE_MESSAGE = 'API is unavailable. Reload the page and try again.'
 
+export const GENERIC_ERROR = 'Something went wrong. Please try again.'
+
+function toErrorType(type: string): ApiErrorType {
+  const known = errorTypes.find((candidate) => candidate === type)
+  if (known === undefined) return 'UnknownError'
+  return known
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly type: ApiErrorType
@@ -23,11 +31,16 @@ export class ApiError extends Error {
       return new ApiError(status, 'UnknownError', fallbackMessage)
     }
     const { type, message, payload } = parsed.data.error
-    const knownType = errorTypes.find((candidate) => candidate === type) ?? 'UnknownError'
+    const knownType = toErrorType(type)
     return new ApiError(status, knownType, message, payload ?? {})
   }
 }
 
 export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError
+}
+
+export function errorMessage(error: unknown): string {
+  if (isApiError(error)) return error.message
+  return GENERIC_ERROR
 }

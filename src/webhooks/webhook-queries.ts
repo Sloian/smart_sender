@@ -1,7 +1,6 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
-import { isApiError } from '../api/api-error'
+import { errorMessage, isApiError } from '../api/api-error'
 import type { Webhook, WebhookList } from '../api/contract'
-import { GENERIC_ERROR } from '../lib/server-errors'
 import type { ListParams } from './list-params'
 import { fetchWebhook, fetchWebhooks } from './webhooks-api'
 
@@ -33,10 +32,6 @@ interface WebhookListState {
   error: unknown
   isPlaceholderData: boolean
   page: number
-}
-
-function errorMessage(error: unknown): string {
-  return isApiError(error) ? error.message : GENERIC_ERROR
 }
 
 function decideView(data: WebhookList | undefined, error: unknown, page: number | null): WebhookListView {
