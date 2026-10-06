@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { issueSession, login } from '../auth/auth-api'
-import { MOCK_USER, mockControl } from '../mocks/state'
-import { setupMockServer, wire } from '../test/mock-server'
-import { fetchWebhooks, PAGE_SIZE } from './webhooks-api'
+import { ApiError } from '../api/api-error'
+import { CSRF_TOKEN, MOCK_USER, mockControl } from '../mocks/state'
+import { server, setupMockServer, wire } from '../test/mock-server'
+import { fetchWebhook, fetchWebhooks, PAGE_SIZE, updateWebhook } from './webhooks-api'
 
 vi.mock('../api/client', async () => {
   const { createHttpClient } = await import('../api/http-client')
@@ -79,5 +80,119 @@ describe('fetchWebhooks', () => {
       'POST /auth/token/rotate 200',
       'GET /v1/webhooks 200',
     ])
+  })
+})
+
+async function signIn() {
+  const token = await login({ email: MOCK_USER.email, password: MOCK_USER.password })
+  await issueSession(token)
+  wire.length = 0
+}
+
+async function rejection(promise: Promise<unknown>): Promise<ApiError> {
+  const error: unknown = await promise.then(
+    () => null,
+    (reason: unknown) => reason,
+  )
+  if (!(error instanceof ApiError)) throw new Error('Expected an ApiError')
+  return error
+}
+
+describe('fetchWebhook', () => {
+  beforeEach(signIn)
+
+  test('returns the webhook by id', async () => {
+    const webhook = await fetchWebhook(5)
+
+    expect(webhook).toEqual({
+      id: 5,
+      name: 'Payment hook 5',
+      url: 'https://example.com/hooks/5',
+      active: true,
+      created_at: '2026-01-05T00:00:00.000Z',
+    })
+    expect(wireLines()).toEqual(['GET /v1/webhooks/5 200'])
+  })
+
+  test('an unknown id is a not found error', async () => {
+    const error = await rejection(fetchWebhook(999))
+
+    expect(error.status).toBe(404)
+    expect(error.type).toBe('NotFoundException')
+  })
+})
+
+describe('updateWebhook', () => {
+  beforeEach(signIn)
+
+  const valid = { name: 'Renamed hook', url: 'https://example.com/renamed' }
+
+  test('invalid values are rejected with the server field messages', async () => {
+    const error = await rejection(updateWebhook(5, { name: '', url: 'not-a-url' }))
+
+    expect(error.status).toBe(422)
+    expect(error.type).toBe('ValidationException')
+    expect(error.fieldErrors).toEqual({
+      name: ['The name field is required.'],
+      url: ['The url must be a valid URL.'],
+    })
+    expect(wireLines()).toEqual(['PUT /v1/webhooks/5 422'])
+    expect(wire.find((entry) => entry.method === 'PUT')?.csrfToken).toBe(CSRF_TOKEN)
+  })
+
+  test('a whitespace only name is rejected by the server', async () => {
+    const error = await rejection(updateWebhook(5, { name: '   ', url: 'https://example.com/x' }))
+
+    expect(error.fieldErrors).toEqual({ name: ['The name field is required.'] })
+  })
+
+  test('valid values are saved and returned', async () => {
+    const updated = await updateWebhook(5, valid)
+
+    expect(updated).toEqual({ id: 5, ...valid, active: true, created_at: '2026-01-05T00:00:00.000Z' })
+    expect(await fetchWebhook(5)).toEqual(updated)
+    expect(wireLines()).toEqual(['PUT /v1/webhooks/5 200', 'GET /v1/webhooks/5 200'])
+  })
+
+  test('only name and url are sent', async () => {
+    const bodies: Promise<unknown>[] = []
+    const capture = ({ request }: { request: Request }) => {
+      if (request.method === 'PUT') bodies.push(request.clone().json())
+    }
+    server.events.on('request:start', capture)
+    const values = { ...valid, active: false, id: 7 }
+
+    try {
+      await updateWebhook(5, values)
+    } finally {
+      server.events.removeListener('request:start', capture)
+    }
+
+    expect(await Promise.all(bodies)).toEqual([valid])
+  })
+
+  test('saving the current values still succeeds', async () => {
+    const current = await fetchWebhook(5)
+
+    const updated = await updateWebhook(5, { name: current.name, url: current.url })
+
+    expect(updated).toEqual(current)
+    expect(wireLines()).toEqual(['GET /v1/webhooks/5 200', 'PUT /v1/webhooks/5 200'])
+  })
+
+  test('an unknown id is a not found error', async () => {
+    const error = await rejection(updateWebhook(999, valid))
+
+    expect(error.status).toBe(404)
+    expect(error.type).toBe('NotFoundException')
+  })
+
+  test('an expired session is rotated and the update retried once', async () => {
+    mockControl.expireSession()
+
+    const updated = await updateWebhook(5, valid)
+
+    expect(updated.name).toBe('Renamed hook')
+    expect(wireLines()).toEqual(['PUT /v1/webhooks/5 401', 'POST /auth/token/rotate 200', 'PUT /v1/webhooks/5 200'])
   })
 })

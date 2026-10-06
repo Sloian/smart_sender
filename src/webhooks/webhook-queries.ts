@@ -1,9 +1,9 @@
-import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { isApiError } from '../api/api-error'
 import type { Webhook, WebhookList } from '../api/contract'
 import { GENERIC_ERROR } from '../lib/server-errors'
 import type { ListParams } from './list-params'
-import { fetchWebhooks } from './webhooks-api'
+import { fetchWebhook, fetchWebhooks } from './webhooks-api'
 
 const WEBHOOKS_KEY = 'webhooks'
 
@@ -34,9 +34,13 @@ interface WebhookListState {
   isPlaceholderData: boolean
 }
 
+function errorMessage(error: unknown): string {
+  return isApiError(error) ? error.message : GENERIC_ERROR
+}
+
 function decideView(data: WebhookList | undefined, error: unknown): WebhookListView {
   if (!data) {
-    if (error) return { kind: 'error', message: isApiError(error) ? error.message : GENERIC_ERROR }
+    if (error) return { kind: 'error', message: errorMessage(error) }
     return { kind: 'loading' }
   }
   const { pages, results } = data.paging
@@ -56,4 +60,42 @@ function decideView(data: WebhookList | undefined, error: unknown): WebhookListV
 export function webhookListView({ data, error, isPlaceholderData }: WebhookListState): WebhookListView {
   const view = decideView(data, error)
   return isPlaceholderData && view.kind !== 'rows' ? { kind: 'loading' } : view
+}
+
+export function webhookQuery(id: number) {
+  return queryOptions({
+    queryKey: webhookKeys.detail(id),
+    queryFn: ({ signal }) => fetchWebhook(id, signal),
+  })
+}
+
+export type WebhookDetailView =
+  | { kind: 'loading' }
+  | { kind: 'not-found' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; webhook: Webhook }
+
+interface WebhookDetailState {
+  data: Webhook | undefined
+  error: unknown
+}
+
+export function webhookDetailView({ data, error }: WebhookDetailState): WebhookDetailView {
+  if (data) return { kind: 'ready', webhook: data }
+  if (isApiError(error) && error.type === 'NotFoundException') return { kind: 'not-found' }
+  if (error) return { kind: 'error', message: errorMessage(error) }
+  return { kind: 'loading' }
+}
+
+export function replaceWebhookInList(list: WebhookList, updated: Webhook): WebhookList {
+  if (!list.data.some((webhook) => webhook.id === updated.id)) return list
+  return { ...list, data: list.data.map((webhook) => (webhook.id === updated.id ? updated : webhook)) }
+}
+
+export function applyWebhookUpdate(client: QueryClient, updated: Webhook): void {
+  client.setQueryData(webhookKeys.detail(updated.id), updated)
+  client.setQueriesData<WebhookList>({ queryKey: webhookKeys.lists() }, (list) =>
+    list ? replaceWebhookInList(list, updated) : list,
+  )
+  void client.invalidateQueries({ queryKey: webhookKeys.lists() })
 }

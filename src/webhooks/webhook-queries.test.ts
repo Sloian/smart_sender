@@ -6,7 +6,15 @@ import { issueSession, login } from '../auth/auth-api'
 import { GENERIC_ERROR } from '../lib/server-errors'
 import { MOCK_USER } from '../mocks/state'
 import { setupMockServer } from '../test/mock-server'
-import { webhookKeys, webhookListQuery, webhookListView } from './webhook-queries'
+import {
+  applyWebhookUpdate,
+  replaceWebhookInList,
+  webhookDetailView,
+  webhookKeys,
+  webhookListQuery,
+  webhookListView,
+  webhookQuery,
+} from './webhook-queries'
 
 vi.mock('../api/client', async () => {
   const { createHttpClient } = await import('../api/http-client')
@@ -119,5 +127,125 @@ describe('webhookListView', () => {
 
   test('a placeholder with rows keeps the rows', () => {
     expect(view(list(rows(1, 10), 1, 3, 28), null, true)).toMatchObject({ kind: 'rows', from: 1, to: 10 })
+  })
+})
+
+describe('webhookQuery', () => {
+  beforeEach(async () => {
+    const token = await login({ email: MOCK_USER.email, password: MOCK_USER.password })
+    await issueSession(token)
+  })
+
+  test('uses the detail key', () => {
+    expect(webhookQuery(5).queryKey).toEqual(webhookKeys.detail(5))
+  })
+
+  test('fetches the webhook', async () => {
+    const client = new QueryClient()
+
+    const result = await client.query(webhookQuery(5))
+
+    expect(result).toMatchObject({ id: 5, name: 'Payment hook 5', url: 'https://example.com/hooks/5' })
+    client.clear()
+  })
+})
+
+describe('webhookDetailView', () => {
+  const view = (data: Webhook | undefined, error: unknown = null) => webhookDetailView({ data, error })
+
+  test('data is ready', () => {
+    const data = webhook(5)
+    expect(view(data)).toEqual({ kind: 'ready', webhook: data })
+  })
+
+  test('data with an error stays ready', () => {
+    const data = webhook(5)
+    expect(view(data, new ApiError(500, 'UnknownError', 'x'))).toEqual({ kind: 'ready', webhook: data })
+  })
+
+  test('a not found error is not found', () => {
+    expect(view(undefined, new ApiError(404, 'NotFoundException', 'Not found.'))).toEqual({ kind: 'not-found' })
+  })
+
+  test('another ApiError shows the server message', () => {
+    expect(view(undefined, new ApiError(500, 'UnknownError', 'Simulated outage.'))).toEqual({
+      kind: 'error',
+      message: 'Simulated outage.',
+    })
+  })
+
+  test('another error shows the generic message', () => {
+    expect(view(undefined, new TypeError('Failed to fetch'))).toEqual({ kind: 'error', message: GENERIC_ERROR })
+  })
+
+  test('nothing is loading', () => {
+    expect(view(undefined)).toEqual({ kind: 'loading' })
+  })
+})
+
+describe('replaceWebhookInList', () => {
+  const updated: Webhook = { ...webhook(5), name: 'Renamed', url: 'https://example.com/renamed' }
+
+  test('replaces the row in place and keeps the other rows and the paging', () => {
+    const source = list(rows(1, 10), 1, 3, 28)
+
+    const result = replaceWebhookInList(source, updated)
+
+    expect(result).not.toBe(source)
+    expect(result.data).toHaveLength(10)
+    expect(result.data[4]).toBe(updated)
+    result.data.forEach((row, index) => {
+      if (index !== 4) expect(row).toBe(source.data[index])
+    })
+    expect(result.paging).toBe(source.paging)
+  })
+
+  test('a list without the id is returned as is', () => {
+    const source = list(rows(11, 10), 2, 3, 28)
+
+    expect(replaceWebhookInList(source, updated)).toBe(source)
+  })
+})
+
+describe('applyWebhookUpdate', () => {
+  const updated: Webhook = { ...webhook(5), name: 'Renamed', url: 'https://example.com/renamed' }
+  const firstKey = webhookKeys.list({ page: 1, search: '' })
+  const secondKey = webhookKeys.list({ page: 2, search: '' })
+  const searchKey = webhookKeys.list({ page: 1, search: 'hook' })
+
+  function seeded() {
+    const client = new QueryClient()
+    const first = list(rows(1, 10), 1, 3, 28)
+    const second = list(rows(11, 10), 2, 3, 28)
+    client.setQueryData(firstKey, first)
+    client.setQueryData(secondKey, second)
+    client.setQueryData(searchKey, list(rows(3, 10), 1, 3, 28))
+    return { client, first, second }
+  }
+
+  test('patches the cached pages that hold the id in place and leaves the others untouched', () => {
+    const { client, first, second } = seeded()
+
+    applyWebhookUpdate(client, updated)
+
+    const patched = client.getQueryData<WebhookList>(firstKey)
+    expect(patched?.data[4]).toEqual(updated)
+    expect(patched?.data[3]).toBe(first.data[3])
+    expect(client.getQueryData<WebhookList>(searchKey)?.data[2]).toEqual(updated)
+    expect(client.getQueryData<WebhookList>(secondKey)).toBe(second)
+    client.clear()
+  })
+
+  test('writes the detail and invalidates only the list queries', () => {
+    const { client } = seeded()
+
+    applyWebhookUpdate(client, updated)
+
+    expect(client.getQueryData(webhookKeys.detail(5))).toEqual(updated)
+    expect(client.getQueryState(firstKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(secondKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(webhookKeys.detail(5))?.isInvalidated).toBe(false)
+    client.clear()
   })
 })
