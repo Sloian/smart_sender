@@ -30,7 +30,7 @@ export function WebhooksPage() {
   const navigationType = useNavigationType()
   const params = parseListParams(searchParams)
   const { data, error, isPlaceholderData, isFetching, refetch } = useQuery(webhookListQuery(params))
-  const view = webhookListView({ data, error, isPlaceholderData })
+  const view = webhookListView({ data, error, isPlaceholderData, page: params.page })
   const [draft, setDraft] = useState<string | null>(null)
   const [locationKey, setLocationKey] = useState(location.key)
 

@@ -78,8 +78,12 @@ describe('webhookListQuery', () => {
 })
 
 describe('webhookListView', () => {
-  const view = (data: WebhookList | undefined, error: unknown = null, isPlaceholderData = false) =>
-    webhookListView({ data, error, isPlaceholderData })
+  const view = (
+    data: WebhookList | undefined,
+    error: unknown = null,
+    isPlaceholderData = false,
+    page = data?.paging.pages.current ?? 1,
+  ) => webhookListView({ data, error, isPlaceholderData, page })
 
   test('no data and no error is loading', () => {
     expect(view(undefined)).toEqual({ kind: 'loading' })
@@ -127,6 +131,15 @@ describe('webhookListView', () => {
 
   test('a placeholder with rows keeps the rows', () => {
     expect(view(list(rows(1, 10), 1, 3, 28), null, true)).toMatchObject({ kind: 'rows', from: 1, to: 10 })
+  })
+
+  test('rows for another page than requested are out of range', () => {
+    expect(view(list(rows(21, 8), 3, 3, 28), null, false, 9)).toEqual({ kind: 'out-of-range', lastPage: 3 })
+    expect(view(list(rows(1, 10), 1, 3, 28), null, false, 2)).toEqual({ kind: 'out-of-range', lastPage: 3 })
+  })
+
+  test('a placeholder from another page keeps its rows while the requested page loads', () => {
+    expect(view(list(rows(1, 10), 1, 3, 28), null, true, 2)).toMatchObject({ kind: 'rows', from: 1, to: 10 })
   })
 })
 

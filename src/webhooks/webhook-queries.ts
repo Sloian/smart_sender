@@ -32,20 +32,23 @@ interface WebhookListState {
   data: WebhookList | undefined
   error: unknown
   isPlaceholderData: boolean
+  page: number
 }
 
 function errorMessage(error: unknown): string {
   return isApiError(error) ? error.message : GENERIC_ERROR
 }
 
-function decideView(data: WebhookList | undefined, error: unknown): WebhookListView {
+function decideView(data: WebhookList | undefined, error: unknown, page: number | null): WebhookListView {
   if (!data) {
     if (error) return { kind: 'error', message: errorMessage(error) }
     return { kind: 'loading' }
   }
   const { pages, results } = data.paging
   if (results.total === 0) return { kind: 'empty' }
-  if (data.data.length === 0) return { kind: 'out-of-range', lastPage: pages.last }
+  if (data.data.length === 0 || (page !== null && pages.current !== page)) {
+    return { kind: 'out-of-range', lastPage: pages.last }
+  }
   const from = (pages.current - 1) * results.limitation + 1
   return {
     kind: 'rows',
@@ -57,8 +60,8 @@ function decideView(data: WebhookList | undefined, error: unknown): WebhookListV
   }
 }
 
-export function webhookListView({ data, error, isPlaceholderData }: WebhookListState): WebhookListView {
-  const view = decideView(data, error)
+export function webhookListView({ data, error, isPlaceholderData, page }: WebhookListState): WebhookListView {
+  const view = decideView(data, error, isPlaceholderData ? null : page)
   return isPlaceholderData && view.kind !== 'rows' ? { kind: 'loading' } : view
 }
 
