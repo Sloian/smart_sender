@@ -53,6 +53,25 @@ describe('applyServerErrors', () => {
     expect(setError).toHaveBeenCalledWith('password', { type: 'server', message: 'First. Second.' }, { shouldFocus: true })
   })
 
+  test('only the first form field with an error gets focus', () => {
+    const setError = apply(validationError({ password: ['B'], email: ['A'] }))
+
+    expect(setError).toHaveBeenCalledTimes(2)
+    expect(setError).toHaveBeenNthCalledWith(1, 'email', { type: 'server', message: 'A' }, { shouldFocus: true })
+    expect(setError).toHaveBeenNthCalledWith(2, 'password', { type: 'server', message: 'B' }, { shouldFocus: false })
+  })
+
+  test('a field with no messages shows the envelope message', () => {
+    const setError = apply(validationError({ email: [] }))
+
+    expect(setError).toHaveBeenCalledTimes(1)
+    expect(setError).toHaveBeenCalledWith(
+      'email',
+      { type: 'server', message: 'The given data was invalid.' },
+      { shouldFocus: true },
+    )
+  })
+
   test('a 422 with an empty payload shows the envelope message', () => {
     const setError = apply(validationError({}))
 

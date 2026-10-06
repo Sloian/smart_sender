@@ -12,14 +12,17 @@ export function applyServerErrors<T extends FieldValues>(
     setError('root.server', { type: 'server', message: isApiError(error) ? error.message : GENERIC_ERROR })
     return
   }
-  const unmatched: string[] = []
-  for (const [field, messages] of Object.entries(error.fieldErrors)) {
-    const message = messages.join(' ')
-    const known = fields.find((candidate) => candidate === field)
-    if (known) setError(known, { type: 'server', message }, { shouldFocus: true })
-    else unmatched.push(message)
-  }
-  if (unmatched.length > 0 || Object.keys(error.fieldErrors).length === 0) {
+  const matched = fields.filter((field) => Object.hasOwn(error.fieldErrors, field))
+  matched.forEach((field, index) => {
+    const message = error.fieldErrors[field]?.join(' ') || error.message
+    setError(field, { type: 'server', message }, { shouldFocus: index === 0 })
+  })
+  const matchedKeys: readonly string[] = matched
+  const unmatched = Object.entries(error.fieldErrors)
+    .filter(([field]) => !matchedKeys.includes(field))
+    .map(([, messages]) => messages.join(' '))
+    .filter(Boolean)
+  if (unmatched.length > 0 || matched.length === 0) {
     setError('root.server', { type: 'server', message: unmatched.join(' ') || error.message })
   }
 }
