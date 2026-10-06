@@ -1,10 +1,10 @@
 import { Alert, Button, EmptyState, Group, Loader, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Webhook } from '../api/contract'
 import { applyServerErrors } from '../lib/server-errors'
-import { listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
+import { isFromList, listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
 import { applyWebhookUpdate, webhookDetailView, webhookQuery } from '../webhooks/webhook-queries'
 import { updateWebhook } from '../webhooks/webhooks-api'
 
@@ -78,6 +78,7 @@ function WebhookEditor({ id, backTo }: { id: number; backTo: string }) {
 function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     register,
     handleSubmit,
@@ -98,8 +99,13 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
       applyServerErrors(error, EDIT_FIELDS, setError)
       return
     }
-    await navigate(backTo, { replace: true })
+    await leave()
   })
+
+  async function leave() {
+    if (isFromList(location.state)) await navigate(-1)
+    else await navigate(backTo, { replace: true })
+  }
 
   return (
     <form onSubmit={(event) => void onSubmit(event)} noValidate>

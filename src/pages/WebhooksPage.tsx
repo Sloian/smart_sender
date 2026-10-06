@@ -18,7 +18,7 @@ import { useDebouncedCallback } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router'
-import { editPath, listPath, parseListParams, toSearchParams } from '../webhooks/list-params'
+import { editPath, FROM_LIST_STATE, listPath, parseListParams, toSearchParams } from '../webhooks/list-params'
 import { draftAfterNavigation, isOwnSearchCommit, searchCommitState } from '../webhooks/search-history'
 import { webhookListQuery, webhookListView } from '../webhooks/webhook-queries'
 
@@ -144,7 +144,7 @@ export function WebhooksPage() {
                 {view.rows.map((webhook) => (
                   <Table.Tr key={webhook.id}>
                     <Table.Td>
-                      <Anchor component={Link} to={editPath(webhook.id, params)}>
+                      <Anchor component={Link} to={editPath(webhook.id, params)} state={FROM_LIST_STATE}>
                         {webhook.name}
                       </Anchor>
                     </Table.Td>

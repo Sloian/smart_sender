@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest'
 import {
   canonicalListTarget,
   editPath,
+  FROM_LIST_STATE,
+  isFromList,
   listPath,
   listSearch,
   parseListParams,
@@ -75,6 +77,16 @@ describe('paths', () => {
   test('edit paths keep the list params', () => {
     expect(editPath(5, { page: 2, search: 'hook' })).toBe('/webhooks/5?page=2&search=hook')
     expect(editPath(5, { page: 1, search: '' })).toBe('/webhooks/5')
+  })
+})
+
+describe('isFromList', () => {
+  test('the state set by the list rows is from the list', () => {
+    expect(isFromList(FROM_LIST_STATE)).toBe(true)
+  })
+
+  test.each([null, undefined, 'fromList', {}, { fromList: 'true' }, { fromList: false }])('%j is not', (state) => {
+    expect(isFromList(state)).toBe(false)
   })
 })
 

@@ -44,6 +44,12 @@ export function editPath(id: number, params: ListParams): string {
   return `${WEBHOOKS_PATH}/${encodeURIComponent(String(id))}${listSearch(params)}`
 }
 
+export const FROM_LIST_STATE = { fromList: true } as const
+
+export function isFromList(state: unknown): boolean {
+  return typeof state === 'object' && state !== null && 'fromList' in state && state.fromList === true
+}
+
 export function parseWebhookId(value: string | undefined): number | null {
   return parsePositiveInt(value)
 }
