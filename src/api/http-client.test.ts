@@ -502,6 +502,41 @@ describe('session rotation', () => {
     expect(sessionEnd).toHaveBeenCalledTimes(1)
   })
 
+  test('a 401 that arrives after a local logout neither rotates nor notifies listeners', async () => {
+    await signIn()
+    let arrived = false
+    let released = false
+    server.use(
+      http.get(
+        '*/v1/webhooks',
+        async () => {
+          arrived = true
+          await until(() => released)
+          return unauthenticated()
+        },
+        { once: true },
+      ),
+    )
+
+    const pending = client.request('/v1/webhooks').catch((caught: unknown) => caught)
+    await until(() => arrived)
+    client.invalidateSession()
+    await client.request('/auth/token/revoke', { method: 'POST', body: { fingerprint: FINGERPRINT } })
+    released = true
+
+    expect(await pending).toMatchObject(sessionExpiredError)
+    expect(count('POST', '/auth/token/rotate')).toBe(0)
+    expect(sessionEnd).not.toHaveBeenCalled()
+
+    await login()
+    mockControl.expireSession()
+    const me = await client.request('/v1/me', { schema: meSchema })
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(statusesOf('POST', '/auth/token/rotate')).toEqual([200])
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
   test('an unsubscribed listener is not notified', async () => {
     const removed = vi.fn<() => void>()
     const unsubscribe = client.onSessionEnd(removed)

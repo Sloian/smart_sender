@@ -88,9 +88,13 @@ export function createHttpClient(config: HttpClientConfig) {
     return csrfToken ?? fetchCsrf()
   }
 
-  function endSession() {
+  function invalidateSession() {
     sessionGeneration += 1
     endedAtGeneration = sessionGeneration
+  }
+
+  function endSession() {
+    invalidateSession()
     for (const listener of listeners) listener()
   }
 
@@ -166,6 +170,7 @@ export function createHttpClient(config: HttpClientConfig) {
 
   return {
     request: send,
+    invalidateSession,
     setFingerprintProvider(provider: () => string) {
       fingerprint = provider
     },
