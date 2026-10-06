@@ -3,13 +3,15 @@ import { beforeEach, describe, expect, test, vi, type Mock } from 'vitest'
 import { ZodError } from 'zod'
 import { BASE_URL, count, server, setupMockServer, wire } from '../test/mock-server'
 import { CSRF_TOKEN, MOCK_USER, mockControl } from '../mocks/state'
-import { ApiError, isApiError } from './api-error'
+import { API_UNAVAILABLE_MESSAGE, ApiError, isApiError } from './api-error'
 import { loginResponseSchema, meSchema, webhookListSchema, webhookSchema } from './contract'
 import { createHttpClient, type HttpClient } from './http-client'
 
 setupMockServer()
 
 const FINGERPRINT = 'a'.repeat(32)
+
+const HTML_PAGE = '<!doctype html><html><body></body></html>'
 
 let client: HttpClient
 let sessionEnd: Mock<() => void>
@@ -140,7 +142,7 @@ describe('transport and csrf', () => {
 
     const error: unknown = await client.request('/v1/me').catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(ApiError)
-    expect(error).toMatchObject({ status: 500, type: 'UnknownError' })
+    expect(error).toMatchObject({ status: 500, type: 'UnknownError', message: API_UNAVAILABLE_MESSAGE })
 
     await login()
 
@@ -152,8 +154,49 @@ describe('transport and csrf', () => {
   test('a csrf response without the token header rejects with ApiError', async () => {
     server.use(http.get('*/csrf', () => new HttpResponse(null, { status: 204 }), { once: true }))
 
-    await expect(client.request('/v1/me')).rejects.toMatchObject({ status: 204, type: 'UnknownError' })
+    await expect(client.request('/v1/me')).rejects.toMatchObject({
+      status: 204,
+      type: 'UnknownError',
+      message: API_UNAVAILABLE_MESSAGE,
+    })
     expect(count('GET', '/v1/me')).toBe(0)
+  })
+
+  test('a csrf bootstrap answered with an html page rejects with the api unavailable message', async () => {
+    server.use(http.get('*/csrf', () => HttpResponse.html(HTML_PAGE, { status: 200 }), { once: true }))
+
+    const error: unknown = await client.request('/v1/me').catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 200, type: 'UnknownError', message: API_UNAVAILABLE_MESSAGE })
+    expect(count('GET', '/v1/me')).toBe(0)
+  })
+
+  test('a csrf bootstrap error envelope keeps the server message', async () => {
+    server.use(
+      http.get('*/csrf', () => envelope(503, 'ServiceUnavailableException', 'Down for maintenance.'), { once: true }),
+    )
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject({
+      status: 503,
+      type: 'UnknownError',
+      message: 'Down for maintenance.',
+    })
+  })
+
+  test('a 419 whose csrf refetch returns an html page rejects with the api unavailable message', async () => {
+    await signIn()
+    server.use(
+      http.put('*/v1/webhooks/:id', () => envelope(419, 'TokenMismatchException'), { once: true }),
+      http.get('*/csrf', () => HttpResponse.html(HTML_PAGE, { status: 200 }), { once: true }),
+    )
+
+    await expect(client.request('/v1/webhooks/1', { method: 'PUT', body: validUpdate })).rejects.toMatchObject({
+      status: 200,
+      type: 'UnknownError',
+      message: API_UNAVAILABLE_MESSAGE,
+    })
+    expect(statusesOf('PUT', '/v1/webhooks/1')).toEqual([419])
+    expect(count('GET', '/csrf')).toBe(1)
   })
 
   test('a 422 maps the payload to field errors', async () => {

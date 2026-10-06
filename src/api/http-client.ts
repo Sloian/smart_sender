@@ -1,5 +1,5 @@
 import type { ZodType } from 'zod'
-import { ApiError } from './api-error'
+import { API_UNAVAILABLE_MESSAGE, ApiError } from './api-error'
 import { CSRF_HEADER, REQUESTED_WITH_HEADER, REQUESTED_WITH_VALUE } from './contract'
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT'
@@ -91,7 +91,9 @@ export function createHttpClient(config: HttpClientConfig) {
         headers: { [REQUESTED_WITH_HEADER]: REQUESTED_WITH_VALUE },
       })
       const token = response.headers.get(CSRF_HEADER)
-      if (!response.ok || !token) throw ApiError.fromBody(response.status, await readBody(response))
+      if (!response.ok || !token) {
+        throw ApiError.fromBody(response.status, await readBody(response), API_UNAVAILABLE_MESSAGE)
+      }
       csrfToken = token
       csrfGeneration += 1
       return token
