@@ -23,7 +23,7 @@ describe('webhookSchema', () => {
   })
 
   test('rejects a webhook without active', () => {
-    const { active: _active, ...withoutActive } = webhook
+    const withoutActive = Object.fromEntries(Object.entries(webhook).filter(([key]) => key !== 'active'))
     expect(webhookSchema.safeParse(withoutActive).success).toBe(false)
   })
 
