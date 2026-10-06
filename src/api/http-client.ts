@@ -20,6 +20,7 @@ export type SessionEndListener = () => void
 export interface HttpClientConfig {
   baseUrl: string
   fetch?: typeof fetch
+  reportError?: (error: unknown) => void
 }
 
 const CSRF_PATH = '/csrf'
@@ -27,6 +28,12 @@ const ROTATE_PATH = '/auth/token/rotate'
 
 const needsCsrf = (method: HttpMethod) => method !== 'GET'
 const isRotatable = (path: string) => path.startsWith('/v1/')
+
+function reportAsync(error: unknown) {
+  queueMicrotask(() => {
+    throw error
+  })
+}
 
 async function readBody(response: Response): Promise<unknown> {
   const text = await response.text()
@@ -49,6 +56,7 @@ export function createHttpClient(config: HttpClientConfig) {
   let endedAtGeneration = 0
 
   const doFetch = (url: URL, init: RequestInit) => (config.fetch ?? globalThis.fetch)(url, init)
+  const reportError = config.reportError ?? reportAsync
 
   function buildUrl(path: string, query: Record<string, QueryValue> = {}) {
     const url = new URL(path, config.baseUrl)
@@ -95,7 +103,13 @@ export function createHttpClient(config: HttpClientConfig) {
 
   function endSession() {
     invalidateSession()
-    for (const listener of listeners) listener()
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (error) {
+        reportError(error)
+      }
+    }
   }
 
   function rotate(): Promise<void> {

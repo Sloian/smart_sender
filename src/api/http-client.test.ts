@@ -537,6 +537,36 @@ describe('session rotation', () => {
     expect(sessionEnd).not.toHaveBeenCalled()
   })
 
+  test.each([
+    {
+      label: 'a repeated 401',
+      end: () => {
+        server.use(http.get('*/v1/me', unauthenticated))
+      },
+    },
+    {
+      label: 'a rotate failure',
+      end: () => {
+        mockControl.revokeSession()
+      },
+    },
+  ])('a throwing listener on $label neither replaces the 401 nor silences other listeners', async ({ end }) => {
+    const failure = new Error('listener failed')
+    const reportError = vi.fn<(error: unknown) => void>()
+    client = createHttpClient({ baseUrl: BASE_URL, reportError })
+    client.setFingerprintProvider(() => FINGERPRINT)
+    client.onSessionEnd(() => {
+      throw failure
+    })
+    client.onSessionEnd(sessionEnd)
+    await signIn()
+    end()
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject(sessionExpiredError)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+    expect(reportError).toHaveBeenCalledExactlyOnceWith(failure)
+  })
+
   test('an unsubscribed listener is not notified', async () => {
     const removed = vi.fn<() => void>()
     const unsubscribe = client.onSessionEnd(removed)
