@@ -5,3 +5,5 @@ coverage/
 *.local
 .DS_Store
 .claude/
+.vitest/
+*.log
