@@ -24,7 +24,18 @@ const user: Me = {
 async function settle(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   router.initialize()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise<void>((resolve) => {
+    const idle = () => router.state.initialized && router.state.navigation.state === 'idle'
+    if (idle()) {
+      resolve()
+      return
+    }
+    const stop = router.subscribe(() => {
+      if (!idle()) return
+      stop()
+      resolve()
+    })
+  })
   const { location, loaderData } = router.state
   router.dispose()
   return { url: `${location.pathname}${location.search}`, loaderData }
