@@ -4,11 +4,13 @@ import { DEFAULT_REDIRECT, LOGIN_PATH } from './auth/redirect'
 import { redirectIfSignedIn, requireUser } from './auth/route-guards'
 import { AppLayout } from './components/AppLayout'
 import { FullPageLoader } from './components/FullPageLoader'
+import { RouteError } from './components/RouteError'
 import { LoginPage } from './pages/LoginPage'
 
 export const router = createBrowserRouter([
   {
     HydrateFallback: FullPageLoader,
+    ErrorBoundary: RouteError,
     children: [
       { path: LOGIN_PATH, loader: redirectIfSignedIn, Component: LoginPage },
       {
