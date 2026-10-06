@@ -132,7 +132,7 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
             variant="default"
             disabled={isSubmitting}
             onClick={() => {
-              void navigate(backTo)
+              void leave()
             }}
           >
             Cancel

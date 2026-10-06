@@ -124,7 +124,7 @@ export function WebhooksPage() {
           description={`Page ${params.page} does not exist. The last page is ${view.lastPage}.`}
         >
           <EmptyState.Actions>
-            <Button component={Link} to={listPath({ ...params, page: view.lastPage })} variant="default">
+            <Button component={Link} to={listPath({ ...params, page: view.lastPage })} replace variant="default">
               Go to page {view.lastPage}
             </Button>
           </EmptyState.Actions>
