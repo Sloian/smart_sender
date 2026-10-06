@@ -21,14 +21,24 @@ export async function endLocalSession(navigate: NavigateTo, to: string): Promise
   queryClient.clear()
 }
 
-export async function signOut(navigate: NavigateTo): Promise<void> {
+let pendingSignOut: Promise<void> | null = null
+
+async function runSignOut(navigate: NavigateTo): Promise<void> {
   httpClient.invalidateSession()
   await revokeSession().catch(() => undefined)
   await endLocalSession(navigate, LOGIN_PATH)
 }
 
+export function signOut(navigate: NavigateTo): Promise<void> {
+  pendingSignOut ??= runSignOut(navigate).finally(() => {
+    pendingSignOut = null
+  })
+  return pendingSignOut
+}
+
 export function subscribeToSessionEnd(navigate: NavigateTo, currentLocation: () => PathLike): () => void {
   return httpClient.onSessionEnd(() => {
+    if (pendingSignOut || !session.user()) return
     void endLocalSession(navigate, loginPath(currentLocation(), SESSION_EXPIRED_REASON))
   })
 }

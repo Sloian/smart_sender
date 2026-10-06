@@ -40,6 +40,14 @@ function navigateSpy(records: string[] = []) {
   })
 }
 
+function deferred() {
+  let resolve: () => void = () => undefined
+  const promise = new Promise<void>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 let unsubscribe: (() => void) | undefined
 
 beforeEach(() => {
@@ -113,6 +121,95 @@ describe('auth service', () => {
     expect(navigate).toHaveBeenCalledWith('/login')
     expect(session.user()).toBeNull()
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+  })
+
+  test('a protected request that fails during sign out does not start the session expired flow', async () => {
+    const expiredNavigate = navigateSpy()
+    unsubscribe = subscribeToSessionEnd(expiredNavigate, () => webhooksLocation)
+    await signIn(credentials)
+    queryClient.setQueryData(['probe'], 1)
+    wire.length = 0
+    const revokeReceived = deferred()
+    const releaseRevoke = deferred()
+    server.use(
+      http.post(
+        '*/auth/token/revoke',
+        async () => {
+          mockControl.revokeSession()
+          revokeReceived.resolve()
+          await releaseRevoke.promise
+        },
+        { once: true },
+      ),
+    )
+    const records: string[] = []
+    const navigate = navigateSpy(records)
+
+    const signingOut = signOut(navigate)
+    await revokeReceived.promise
+    await expect(fetchMe()).rejects.toMatchObject({ status: 401 })
+    releaseRevoke.resolve()
+    await signingOut
+
+    expect(wireLines()).toEqual(['GET /v1/me 401', 'POST /auth/token/rotate 400', 'POST /auth/token/revoke 204'])
+    expect(expiredNavigate).not.toHaveBeenCalled()
+    expect(records).toEqual(['navigate /login cache=1 user=null'])
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+  })
+
+  test('a renewal that fails after sign out has finished does not start the session expired flow', async () => {
+    const expiredNavigate = navigateSpy()
+    unsubscribe = subscribeToSessionEnd(expiredNavigate, () => webhooksLocation)
+    await signIn(credentials)
+    wire.length = 0
+    const revokeReceived = deferred()
+    const releaseRevoke = deferred()
+    const rotateReceived = deferred()
+    const releaseRotate = deferred()
+    server.use(
+      http.post(
+        '*/auth/token/revoke',
+        async () => {
+          mockControl.revokeSession()
+          revokeReceived.resolve()
+          await releaseRevoke.promise
+        },
+        { once: true },
+      ),
+      http.post(
+        '*/auth/token/rotate',
+        async () => {
+          rotateReceived.resolve()
+          await releaseRotate.promise
+        },
+        { once: true },
+      ),
+    )
+    const navigate = navigateSpy()
+
+    const signingOut = signOut(navigate)
+    await revokeReceived.promise
+    const me = fetchMe().catch((reason: unknown) => reason)
+    await rotateReceived.promise
+    releaseRevoke.resolve()
+    await signingOut
+    releaseRotate.resolve()
+
+    expect(await me).toMatchObject({ status: 401 })
+    expect(wireLines()).toEqual(['GET /v1/me 401', 'POST /auth/token/revoke 204', 'POST /auth/token/rotate 400'])
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(expiredNavigate).not.toHaveBeenCalled()
+    expect(session.user()).toBeNull()
+  })
+
+  test('sign out runs once when it is requested again while in progress', async () => {
+    await signIn(credentials)
+    const navigate = navigateSpy()
+
+    await Promise.all([signOut(navigate), signOut(navigate)])
+
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(count('POST', '/auth/token/revoke')).toBe(1)
   })
 
   test('an expired session is renewed without leaving the page', async () => {
