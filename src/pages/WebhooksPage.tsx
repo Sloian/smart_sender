@@ -18,8 +18,8 @@ import { useDebouncedCallback } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router'
-import { editPath, FROM_LIST_STATE, listPath, parseListParams, toSearchParams } from '../webhooks/list-params'
-import { draftAfterNavigation, isOwnSearchCommit, searchCommitState } from '../webhooks/search-history'
+import { editPath, FROM_LIST_STATE, listPath, listSearch, parseListParams, toSearchParams } from '../webhooks/list-params'
+import { draftAfterNavigation, isOwnSearchCommit, searchCommitNavigation } from '../webhooks/search-history'
 import { webhookListQuery, webhookListView } from '../webhooks/webhook-queries'
 
 const SEARCH_DEBOUNCE_MS = 300
@@ -41,13 +41,14 @@ export function WebhooksPage() {
 
   const searchValue = draft ?? params.search
 
-  function commitSearch(value: string) {
+  function commitSearch(value: string, typed: boolean) {
     if (value === params.search) return
-    setSearchParams(toSearchParams({ page: 1, search: value }), { state: searchCommitState(location.key) })
+    const next = { page: 1, search: value }
+    setSearchParams(toSearchParams(next), searchCommitNavigation(location, navigationType, listSearch(next), typed))
   }
 
   const debouncedCommit = useDebouncedCallback(() => {
-    if (draft !== null) commitSearch(draft)
+    if (draft !== null) commitSearch(draft, true)
   }, SEARCH_DEBOUNCE_MS)
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export function WebhooksPage() {
   function clearSearch() {
     debouncedCommit.cancel()
     setDraft('')
-    commitSearch('')
+    commitSearch('', false)
   }
 
   return (
