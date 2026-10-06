@@ -7,6 +7,8 @@ import {
   type FieldErrors,
   type LoginResponse,
   type Me,
+  type Webhook,
+  type WebhookList,
 } from '../api/contract'
 import { CSRF_TOKEN, MOCK_USER, now, state } from './state'
 
@@ -46,6 +48,17 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 const asString = (value: unknown) => (typeof value === 'string' ? value : '')
 
 const emptyResponse = (status: 200 | 204) => new HttpResponse(null, { status })
+
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 100
+
+const parseIntParam = (value: string | null) => Number.parseInt(value ?? '', 10)
+
+function isHttpUrl(value: string): boolean {
+  if (!URL.canParse(value)) return false
+  const { protocol, hostname } = new URL(value)
+  return (protocol === 'http:' || protocol === 'https:') && hostname !== ''
+}
 
 export const handlers = [
   http.get('*/csrf', () => new HttpResponse(null, { status: 204, headers: { [CSRF_HEADER]: CSRF_TOKEN } })),
@@ -108,5 +121,50 @@ export const handlers = [
     const { id, email, first_name, last_name } = MOCK_USER
     const user: Me = { id, email, first_name, last_name, name: `${first_name} ${last_name}` }
     return HttpResponse.json(user)
+  }),
+
+  http.get('*/v1/webhooks', ({ request }) => {
+    const auth = authFailure()
+    if (auth) return auth
+    const params = new URL(request.url).searchParams
+    const page = Math.max(1, parseIntParam(params.get('page')) || 1)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseIntParam(params.get('limit')) || DEFAULT_LIMIT))
+    const search = (params.get('search') ?? '').trim().toLowerCase()
+    const filtered = state.webhooks.filter((webhook) => webhook.name.toLowerCase().includes(search))
+    const body: WebhookList = {
+      data: filtered.slice((page - 1) * limit, page * limit),
+      paging: {
+        pages: { current: page, last: Math.max(1, Math.ceil(filtered.length / limit)) },
+        results: { total: filtered.length, limitation: limit },
+      },
+    }
+    return HttpResponse.json(body)
+  }),
+
+  http.get<{ id: string }>('*/v1/webhooks/:id', ({ params }) => {
+    const auth = authFailure()
+    if (auth) return auth
+    const webhook = state.webhooks.find((item) => String(item.id) === params.id)
+    return webhook ? HttpResponse.json(webhook) : errorResponse(404)
+  }),
+
+  http.put<{ id: string }>('*/v1/webhooks/:id', async ({ request, params }) => {
+    const csrf = csrfFailure(request)
+    if (csrf) return csrf
+    const auth = authFailure()
+    if (auth) return auth
+    const index = state.webhooks.findIndex((item) => String(item.id) === params.id)
+    const current = state.webhooks[index]
+    if (!current) return errorResponse(404)
+    const body = await readJson(request)
+    const name = asString(body.name).trim()
+    const url = asString(body.url).trim()
+    const errors: FieldErrors = {}
+    if (!name) errors.name = ['The name field is required.']
+    if (!isHttpUrl(url)) errors.url = ['The url must be a valid URL.']
+    if (Object.keys(errors).length > 0) return validationError(errors)
+    const updated: Webhook = { ...current, name, url }
+    state.webhooks[index] = updated
+    return HttpResponse.json(updated)
   }),
 ]

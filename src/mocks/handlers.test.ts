@@ -5,8 +5,11 @@ import {
   REQUESTED_WITH_HEADER,
   REQUESTED_WITH_VALUE,
   errorEnvelopeSchema,
+  errorTypeByStatus,
   loginResponseSchema,
   meSchema,
+  webhookListSchema,
+  webhookSchema,
 } from '../api/contract'
 import { BASE_URL, setupMockServer } from '../test/mock-server'
 import { CSRF_TOKEN, MOCK_USER, mockControl, state } from './state'
@@ -303,5 +306,248 @@ describe('mockControl.reset', () => {
     await signIn()
     mockControl.advanceTime(29_000)
     expect((await me()).status).toBe(200)
+  })
+})
+
+const listResponse = (params: Record<string, string> = {}) => {
+  const query = new URLSearchParams(params).toString()
+  return call('GET', query ? `/v1/webhooks?${query}` : '/v1/webhooks')
+}
+
+async function list(params: Record<string, string> = {}) {
+  const response = await listResponse(params)
+  expect(response.status).toBe(200)
+  return webhookListSchema.parse(response.json)
+}
+
+const idsOf = (page: { data: { id: number }[] }) => page.data.map((webhook) => webhook.id)
+
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index)
+
+const getWebhook = (id: string) => call('GET', `/v1/webhooks/${id}`)
+
+const updateWebhook = (id: string, body: unknown, csrf?: string | false) =>
+  call('PUT', `/v1/webhooks/${id}`, { body, csrf })
+
+const SEED_ONE = {
+  id: 1,
+  name: 'Lead hook 1',
+  url: 'https://example.com/hooks/1',
+  active: true,
+  created_at: '2026-01-01T00:00:00.000Z',
+}
+
+describe('webhook list', () => {
+  test('without params returns the first 10 of 28 webhooks', async () => {
+    await signIn()
+    const response = await listResponse()
+    expect(response.status).toBe(200)
+    const page = webhookListSchema.parse(response.json)
+    expect(idsOf(page)).toEqual(range(1, 10))
+    expect(page.paging).toEqual({ pages: { current: 1, last: 3 }, results: { total: 28, limitation: 10 } })
+  })
+
+  test('page 2 continues without overlap or gap', async () => {
+    await signIn()
+    expect(idsOf(await list({ page: '2' }))).toEqual(range(11, 20))
+  })
+
+  test('page 3 holds the last 8 webhooks', async () => {
+    await signIn()
+    expect(idsOf(await list({ page: '3' }))).toEqual(range(21, 28))
+  })
+
+  test('a page beyond the last returns empty data', async () => {
+    await signIn()
+    const page = await list({ page: '4' })
+    expect(page.data).toEqual([])
+    expect(page.paging.pages).toEqual({ current: 4, last: 3 })
+  })
+
+  test.each(['0', '-1', 'abc'])('page %s falls back to page 1', async (value) => {
+    await signIn()
+    const page = await list({ page: value })
+    expect(page.paging.pages.current).toBe(1)
+    expect(idsOf(page)).toEqual(range(1, 10))
+  })
+
+  test('limit sets the page size and limitation', async () => {
+    await signIn()
+    const page = await list({ limit: '5' })
+    expect(page.data).toHaveLength(5)
+    expect(page.paging.results.limitation).toBe(5)
+    expect(page.paging.pages.last).toBe(6)
+  })
+
+  test('search is case-insensitive', async () => {
+    await signIn()
+    const page = await list({ search: 'ORDER' })
+    expect(page.paging.results.total).toBe(9)
+    expect(page.paging.pages.last).toBe(1)
+    expect(page.data.every((webhook) => webhook.name.toLowerCase().includes('order'))).toBe(true)
+  })
+
+  test('search with an encoded space matches a substring', async () => {
+    await signIn()
+    const first = await list({ search: 'hook 1' })
+    expect(first.paging.results.total).toBe(11)
+    expect(first.paging.pages.last).toBe(2)
+    expect((await list({ search: 'hook 1', page: '2' })).data).toHaveLength(1)
+  })
+
+  test('search without matches returns an empty first page', async () => {
+    await signIn()
+    const page = await list({ search: 'zzz' })
+    expect(page.data).toEqual([])
+    expect(page.paging).toEqual({ pages: { current: 1, last: 1 }, results: { total: 0, limitation: 10 } })
+  })
+
+  test('search is trimmed', async () => {
+    await signIn()
+    const padded = await list({ search: '  lead  ' })
+    const plain = await list({ search: 'lead' })
+    expect(padded.paging.results.total).toBe(plain.paging.results.total)
+    expect(plain.paging.results.total).toBe(10)
+  })
+
+  test('an empty search returns every webhook', async () => {
+    await signIn()
+    expect((await list({ search: '' })).paging.results.total).toBe(28)
+  })
+
+  test('order is stable and ascending by id', async () => {
+    await signIn()
+    const first = idsOf(await list({ limit: '100' }))
+    const second = idsOf(await list({ limit: '100' }))
+    expect(second).toEqual(first)
+    expect(first).toEqual(range(1, 28))
+  })
+
+  test('order is unchanged after an update', async () => {
+    await signIn()
+    expect((await updateWebhook('5', { name: 'Aaa first', url: 'https://ok.dev' })).status).toBe(200)
+    expect(idsOf(await list({ limit: '100' }))).toEqual(range(1, 28))
+  })
+
+  test('the list requires a session', async () => {
+    expect((await listResponse()).status).toBe(401)
+  })
+})
+
+describe('webhook by id', () => {
+  test('GET /v1/webhooks/1 returns the webhook', async () => {
+    await signIn()
+    const response = await getWebhook('1')
+    expect(response.status).toBe(200)
+    expect(webhookSchema.parse(response.json)).toEqual(SEED_ONE)
+  })
+
+  test.each(['999', 'abc'])('GET /v1/webhooks/%s returns 404', async (id) => {
+    await signIn()
+    const response = await getWebhook(id)
+    expect(response.status).toBe(404)
+    expect(errorOf(response).type).toBe('NotFoundException')
+  })
+
+  test('the by-id route requires a session', async () => {
+    expect((await getWebhook('1')).status).toBe(401)
+  })
+})
+
+describe('webhook update', () => {
+  const invalidBody = { name: '', url: 'ftp://x' }
+
+  test('csrf is checked before the session', async () => {
+    expect((await updateWebhook('1', invalidBody, false)).status).toBe(419)
+  })
+
+  test('the session is checked before existence', async () => {
+    expect((await updateWebhook('999', invalidBody)).status).toBe(401)
+  })
+
+  test('existence is checked before validation', async () => {
+    await signIn()
+    expect((await updateWebhook('999', invalidBody)).status).toBe(404)
+  })
+
+  test('an invalid body on an existing webhook returns 422', async () => {
+    await signIn()
+    expect((await updateWebhook('1', invalidBody)).status).toBe(422)
+  })
+
+  test.each(['', '   '])('name %j is rejected', async (name) => {
+    await signIn()
+    const response = await updateWebhook('1', { name, url: 'https://ok.dev' })
+    expect(response.status).toBe(422)
+    expect(errorOf(response).payload).toEqual({ name: ['The name field is required.'] })
+  })
+
+  test.each(['ftp://x', 'javascript:alert(1)', 'data:text/html,hi', 'http://', ''])(
+    'url %j is rejected',
+    async (url) => {
+      await signIn()
+      const response = await updateWebhook('1', { name: 'Valid', url })
+      expect(response.status).toBe(422)
+      expect(errorOf(response).payload).toEqual({ url: ['The url must be a valid URL.'] })
+    },
+  )
+
+  test('both invalid fields are reported together', async () => {
+    await signIn()
+    const response = await updateWebhook('1', { name: ' ', url: 'javascript:alert(1)' })
+    expect(response.status).toBe(422)
+    expect(errorOf(response)).toEqual({
+      type: 'ValidationException',
+      message: 'The given data was invalid.',
+      payload: { name: ['The name field is required.'], url: ['The url must be a valid URL.'] },
+    })
+  })
+
+  test('a valid update trims, persists and is searchable', async () => {
+    await signIn()
+    const response = await updateWebhook('1', { name: '  Renamed  ', url: 'https://ok.dev/hook?x=1' })
+    expect(response.status).toBe(200)
+    const expected = { ...SEED_ONE, name: 'Renamed', url: 'https://ok.dev/hook?x=1' }
+    expect(webhookSchema.parse(response.json)).toEqual(expected)
+    expect(webhookSchema.parse((await getWebhook('1')).json)).toEqual(expected)
+    expect(idsOf(await list({ search: 'renamed' }))).toEqual([1])
+  })
+
+  test('an update rejected for csrf leaves the webhook unchanged', async () => {
+    await signIn()
+    const response = await updateWebhook('1', { name: 'Hijacked', url: 'https://evil.dev' }, 'wrong')
+    expect(response.status).toBe(419)
+    expect(webhookSchema.parse((await getWebhook('1')).json)).toEqual(SEED_ONE)
+  })
+})
+
+describe('error envelope', () => {
+  const producers: { status: 400 | 401 | 404 | 419 | 422; produce: () => Promise<CallResult> }[] = [
+    { status: 400, produce: () => rotate() },
+    { status: 401, produce: () => me() },
+    {
+      status: 404,
+      produce: async () => {
+        await signIn()
+        return getWebhook('999')
+      },
+    },
+    { status: 419, produce: () => updateWebhook('1', { name: 'x', url: 'https://ok.dev' }, false) },
+    {
+      status: 422,
+      produce: async () => {
+        await signIn()
+        return updateWebhook('1', { name: '', url: '' })
+      },
+    },
+  ]
+
+  test.each(producers)('status $status carries the spec envelope', async ({ status, produce }) => {
+    const response = await produce()
+    expect(response.status).toBe(status)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    const { error } = errorEnvelopeSchema.parse(response.json)
+    expect(error.type).toBe(errorTypeByStatus[status])
+    expect('payload' in error).toBe(status === 422)
   })
 })
