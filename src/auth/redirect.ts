@@ -14,7 +14,13 @@ export interface PathLike {
   hash: string
 }
 
-const isLoginPath = (pathname: string) => pathname.toLowerCase().replace(/\/+$/, '') === LOGIN_PATH
+function isLoginPath(pathname: string): boolean {
+  try {
+    return decodeURIComponent(pathname).toLowerCase().replace(/\/+$/, '') === LOGIN_PATH
+  } catch {
+    return true
+  }
+}
 
 export function safeRedirectPath(value: string | null | undefined): string {
   if (!value?.startsWith('/') || !URL.canParse(value, PARSE_BASE)) return DEFAULT_REDIRECT

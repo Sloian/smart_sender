@@ -21,6 +21,9 @@ describe('safeRedirectPath', () => {
     '/login',
     '/LOGIN/',
     '/login?redirectTo=/x',
+    '/%4Cogin',
+    '/%6c%6F%67%69%6E/',
+    '/%E0%A4%A',
   ])('falls back to /webhooks for %j', (value) => {
     expect(safeRedirectPath(value)).toBe('/webhooks')
   })
@@ -41,7 +44,7 @@ describe('loginPath', () => {
     )
   })
 
-  test.each(['/', '/login'])('does not wrap %s', (pathname) => {
+  test.each(['/', '/login', '/%4Cogin'])('does not wrap %s', (pathname) => {
     expect(loginPath({ pathname, search: '', hash: '' })).toBe('/login')
   })
 
