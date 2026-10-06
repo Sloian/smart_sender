@@ -271,6 +271,29 @@ describe('auth service', () => {
     })
   })
 
+  test('a failed renewal during sign in does not report an expired session', async () => {
+    const navigate = navigateSpy()
+    unsubscribe = subscribeToSessionEnd(navigate, () => webhooksLocation)
+    server.use(
+      http.get(
+        '*/v1/me',
+        () => HttpResponse.json({ error: { type: 'AuthenticationException', message: 'Unauthenticated.' } }, { status: 401 }),
+        { once: true },
+      ),
+      http.post(
+        '*/auth/token/rotate',
+        () => HttpResponse.json({ error: { type: 'BadRequestException', message: 'Bad request.' } }, { status: 400 }),
+        { once: true },
+      ),
+    )
+
+    await expect(signIn(credentials)).rejects.toMatchObject({ status: 401 })
+
+    expect(wireLines()).toContain('POST /auth/token/rotate 400')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(session.user()).toBeNull()
+  })
+
   test('the session end subscription stops after unsubscribe', async () => {
     const navigate = navigateSpy()
     subscribeToSessionEnd(navigate, () => webhooksLocation)()
