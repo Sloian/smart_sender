@@ -1,5 +1,6 @@
 import { Alert, Button, EmptyState, Group, Loader, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Webhook } from '../api/contract'
@@ -79,6 +80,7 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
+  const activeKey = useRef<string | null>(location.key)
   const {
     register,
     handleSubmit,
@@ -92,15 +94,23 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
     },
   })
 
-  const onSubmit = handleSubmit(async (values) => {
+  useEffect(() => {
+    activeKey.current = location.key
+    return () => {
+      activeKey.current = null
+    }
+  }, [location.key])
+
+  async function submit(values: EditValues) {
+    const submittedFrom = location.key
     try {
       await mutation.mutateAsync(values)
     } catch (error) {
-      applyServerErrors(error, EDIT_FIELDS, setError)
+      if (activeKey.current === submittedFrom) applyServerErrors(error, EDIT_FIELDS, setError)
       return
     }
-    await leave()
-  })
+    if (activeKey.current === submittedFrom) await leave()
+  }
 
   async function leave() {
     if (isFromList(location.state)) await navigate(-1)
@@ -108,7 +118,7 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
   }
 
   return (
-    <form onSubmit={(event) => void onSubmit(event)} noValidate>
+    <form onSubmit={(event) => void handleSubmit(submit)(event)} noValidate>
       <Stack>
         {errors.root?.server && <Alert color="red">{errors.root.server.message}</Alert>}
         <TextInput label="Name" autoComplete="off" error={errors.name?.message} {...register('name')} />
@@ -117,7 +127,14 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
           <Button type="submit" loading={isSubmitting}>
             Save
           </Button>
-          <Button component={Link} to={backTo} variant="default">
+          <Button
+            type="button"
+            variant="default"
+            disabled={isSubmitting}
+            onClick={() => {
+              void navigate(backTo)
+            }}
+          >
             Cancel
           </Button>
         </Group>
