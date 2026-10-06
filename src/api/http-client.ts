@@ -27,7 +27,7 @@ const CSRF_PATH = '/csrf'
 const ROTATE_PATH = '/auth/token/rotate'
 
 const needsCsrf = (method: HttpMethod) => method !== 'GET'
-const isRotatable = (path: string) => path.startsWith('/v1/')
+const isRotatable = (pathname: string) => pathname.startsWith('/v1/')
 
 function missingFingerprint(): string {
   throw new Error('Fingerprint provider is not configured.')
@@ -61,9 +61,11 @@ export function createHttpClient(config: HttpClientConfig) {
 
   const doFetch = (url: URL, init: RequestInit) => (config.fetch ?? globalThis.fetch)(url, init)
   const reportError = config.reportError ?? reportAsync
+  const origin = new URL(config.baseUrl).origin
 
   function buildUrl(path: string, query: Record<string, QueryValue> = {}) {
     const url = new URL(path, config.baseUrl)
+    if (url.origin !== origin) throw new Error(`Cross-origin request blocked: ${url.origin}`)
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== '') url.searchParams.set(key, String(value))
     }
@@ -137,6 +139,8 @@ export function createHttpClient(config: HttpClientConfig) {
 
   async function send<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
     const method = options.method ?? 'GET'
+    const url = buildUrl(path, options.query)
+    const rotatable = isRotatable(url.pathname)
     let csrfRetried = false
     let authRetried = false
 
@@ -145,7 +149,7 @@ export function createHttpClient(config: HttpClientConfig) {
       const csrfGenerationAtSend = csrfGeneration
       const generationAtSend = sessionGeneration
 
-      const response = await doFetch(buildUrl(path, options.query), {
+      const response = await doFetch(url, {
         method,
         headers: buildHeaders(method, token, options),
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -168,7 +172,7 @@ export function createHttpClient(config: HttpClientConfig) {
         continue
       }
 
-      if (response.status === 401 && isRotatable(path)) {
+      if (response.status === 401 && rotatable) {
         if (generationAtSend < endedAtGeneration) throw error
         if (authRetried) {
           if (generationAtSend === sessionGeneration) endSession()

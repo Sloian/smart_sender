@@ -214,6 +214,15 @@ describe('transport and csrf', () => {
     await expect(client.request('/v1/webhooks/1', { schema: webhookSchema })).rejects.toBeInstanceOf(ZodError)
   })
 
+  test('a cross-origin path is rejected before anything is sent', async () => {
+    await signIn()
+
+    await expect(
+      client.request('//evil.example/v1/webhooks/1', { method: 'PUT', body: validUpdate }),
+    ).rejects.toThrow('Cross-origin request blocked')
+    expect(wire).toEqual([])
+  })
+
   test('query values are sent as search params and empty ones are omitted', async () => {
     await signIn()
     const searches: string[] = []
@@ -333,6 +342,18 @@ describe('session rotation', () => {
     server.use(http.post('*/auth/token/revoke', unauthenticated))
 
     await expect(client.request('/auth/token/revoke', { method: 'POST' })).rejects.toBeInstanceOf(ApiError)
+    expect(count('POST', '/auth/token/revoke')).toBe(1)
+    expect(count('POST', '/auth/token/rotate')).toBe(0)
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('a dot-segment path that resolves to an auth endpoint never rotates', async () => {
+    await signIn()
+    server.use(http.post('*/auth/token/revoke', unauthenticated))
+
+    await expect(
+      client.request('/v1/../auth/token/revoke', { method: 'POST', body: { fingerprint: FINGERPRINT } }),
+    ).rejects.toMatchObject(sessionExpiredError)
     expect(count('POST', '/auth/token/revoke')).toBe(1)
     expect(count('POST', '/auth/token/rotate')).toBe(0)
     expect(sessionEnd).not.toHaveBeenCalled()
