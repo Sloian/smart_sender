@@ -195,7 +195,8 @@ export function createHttpClient(config: HttpClientConfig) {
 
   function request<T>(path: string, options: RequestOptions<T> & { schema: ZodType<T> }): Promise<T>
   function request(path: string, options?: Omit<RequestOptions<unknown>, 'schema'>): Promise<unknown>
-  function request(path: string, options: RequestOptions<unknown> = {}): Promise<unknown> {
+  async function request(path: string, options: RequestOptions<unknown> = {}): Promise<unknown> {
+    if (buildUrl(path).pathname === ROTATE_PATH) throw new Error('Session rotation is managed by the http client.')
     return send(path, options)
   }
 

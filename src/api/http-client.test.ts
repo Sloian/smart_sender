@@ -376,6 +376,18 @@ describe('session rotation', () => {
     expect(sessionEnd).not.toHaveBeenCalled()
   })
 
+  test.each(['/auth/token/rotate', '/v1/../auth/token/rotate'])(
+    'a direct request to %s is rejected so rotate stays single-flight',
+    async (path) => {
+      await signIn()
+
+      await expect(client.request(path, { method: 'POST', body: { fingerprint: FINGERPRINT } })).rejects.toThrow(
+        'Session rotation is managed by the http client.',
+      )
+      expect(wire).toEqual([])
+    },
+  )
+
   test('rotate uses its own 419 retry', async () => {
     server.use(http.post('*/auth/token/rotate', () => envelope(419, 'TokenMismatchException'), { once: true }))
     await signIn()
