@@ -23,8 +23,10 @@ export interface HttpClientConfig {
 }
 
 const CSRF_PATH = '/csrf'
+const ROTATE_PATH = '/auth/token/rotate'
 
 const needsCsrf = (method: HttpMethod) => method !== 'GET'
+const isRotatable = (path: string) => path.startsWith('/v1/')
 
 async function readBody(response: Response): Promise<unknown> {
   const text = await response.text()
@@ -38,10 +40,13 @@ async function readBody(response: Response): Promise<unknown> {
 
 export function createHttpClient(config: HttpClientConfig) {
   const listeners = new Set<SessionEndListener>()
-  const session = { fingerprint: (): string => '' }
+  let fingerprint: () => string = () => ''
   let csrfToken: string | null = null
   let csrfRequest: Promise<string> | null = null
   let csrfGeneration = 0
+  let rotateRequest: Promise<void> | null = null
+  let sessionGeneration = 0
+  let lastTransition: 'rotated' | 'ended' = 'rotated'
 
   const doFetch = (url: URL, init: RequestInit) => (config.fetch ?? globalThis.fetch)(url, init)
 
@@ -83,13 +88,39 @@ export function createHttpClient(config: HttpClientConfig) {
     return csrfToken ?? fetchCsrf()
   }
 
+  function endSession() {
+    sessionGeneration += 1
+    lastTransition = 'ended'
+    for (const listener of listeners) listener()
+  }
+
+  function rotate(): Promise<void> {
+    rotateRequest ??= send<unknown>(ROTATE_PATH, { method: 'POST', body: { fingerprint: fingerprint() } })
+      .then(
+        () => {
+          sessionGeneration += 1
+          lastTransition = 'rotated'
+        },
+        (error: unknown) => {
+          endSession()
+          throw error
+        },
+      )
+      .finally(() => {
+        rotateRequest = null
+      })
+    return rotateRequest
+  }
+
   async function send<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
     const method = options.method ?? 'GET'
     let csrfRetried = false
+    let authRetried = false
 
     for (;;) {
       const token = await ensureCsrf()
       const csrfGenerationAtSend = csrfGeneration
+      const generationAtSend = sessionGeneration
 
       const response = await doFetch(buildUrl(path, options.query), {
         method,
@@ -114,6 +145,22 @@ export function createHttpClient(config: HttpClientConfig) {
         continue
       }
 
+      if (response.status === 401 && isRotatable(path)) {
+        if (authRetried) {
+          if (generationAtSend === sessionGeneration) endSession()
+          throw error
+        }
+        authRetried = true
+        if (generationAtSend !== sessionGeneration && !rotateRequest) {
+          if (lastTransition === 'ended') throw error
+          continue
+        }
+        await (rotateRequest ?? rotate()).catch(() => {
+          throw error
+        })
+        continue
+      }
+
       throw error
     }
   }
@@ -121,7 +168,7 @@ export function createHttpClient(config: HttpClientConfig) {
   return {
     request: send,
     setFingerprintProvider(provider: () => string) {
-      session.fingerprint = provider
+      fingerprint = provider
     },
     onSessionEnd(listener: SessionEndListener) {
       listeners.add(listener)

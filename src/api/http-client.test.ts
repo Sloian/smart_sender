@@ -2,9 +2,9 @@ import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, test, vi, type Mock } from 'vitest'
 import { ZodError } from 'zod'
 import { BASE_URL, count, server, setupMockServer, wire } from '../test/mock-server'
-import { CSRF_TOKEN, MOCK_USER } from '../mocks/state'
+import { CSRF_TOKEN, MOCK_USER, mockControl } from '../mocks/state'
 import { ApiError, isApiError } from './api-error'
-import { loginResponseSchema, webhookListSchema, webhookSchema } from './contract'
+import { loginResponseSchema, meSchema, webhookListSchema, webhookSchema } from './contract'
 import { createHttpClient, type HttpClient } from './http-client'
 
 setupMockServer()
@@ -233,5 +233,208 @@ describe('transport and csrf', () => {
     expect(page.data).toHaveLength(10)
     expect(filtered.paging.results.total).toBe(11)
     expect(searches).toEqual(['?page=2&limit=10', '?search=hook+1'])
+  })
+})
+
+describe('session rotation', () => {
+  const unauthenticated = () => envelope(401, 'AuthenticationException', 'Unauthenticated.')
+  const sessionExpiredError = { name: 'ApiError', status: 401, type: 'AuthenticationException' }
+
+  async function until(condition: () => boolean) {
+    for (let attempt = 0; attempt < 400 && !condition(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  test('two parallel requests with 401 share one rotate and both retries succeed', async () => {
+    await signIn()
+    mockControl.expireSession()
+
+    const [me, list] = await Promise.all([
+      client.request('/v1/me', { schema: meSchema }),
+      client.request('/v1/webhooks', { query: { page: 1, limit: 10 }, schema: webhookListSchema }),
+    ])
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(list.data).toHaveLength(10)
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(statusesOf('GET', '/v1/me')).toEqual([401, 200])
+    expect(statusesOf('GET', '/v1/webhooks')).toEqual([401, 200])
+    expect(wire.every((entry) => entry.requestedWith === 'XMLHttpRequest')).toBe(true)
+    expect(wire.find((entry) => entry.path === '/auth/token/rotate')?.csrfToken).toBe(CSRF_TOKEN)
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('a naturally lapsed session is rotated and the request retried', async () => {
+    await signIn()
+    mockControl.advanceTime(30_000)
+
+    const me = await client.request('/v1/me', { schema: meSchema })
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(statusesOf('GET', '/v1/me')).toEqual([401, 200])
+  })
+
+  test('a rotate failure ends the session once and rejects every caller with the original 401', async () => {
+    await signIn()
+    mockControl.revokeSession()
+
+    const results = await Promise.allSettled([client.request('/v1/me'), client.request('/v1/webhooks')])
+
+    expect(results).toMatchObject([
+      { status: 'rejected', reason: sessionExpiredError },
+      { status: 'rejected', reason: sessionExpiredError },
+    ])
+    expect(statusesOf('POST', '/auth/token/rotate')).toEqual([400])
+    expect(count('GET', '/v1/me')).toBe(1)
+    expect(count('GET', '/v1/webhooks')).toBe(1)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('a 401 on the retried request ends the session', async () => {
+    await signIn()
+    server.use(http.get('*/v1/me', unauthenticated))
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject(sessionExpiredError)
+    expect(count('GET', '/v1/me')).toBe(2)
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('parallel repeated 401s rotate once and end the session once', async () => {
+    await signIn()
+    server.use(http.get('*/v1/me', unauthenticated), http.get('*/v1/webhooks', unauthenticated))
+
+    const results = await Promise.allSettled([client.request('/v1/me'), client.request('/v1/webhooks')])
+
+    expect(results).toMatchObject([
+      { status: 'rejected', reason: sessionExpiredError },
+      { status: 'rejected', reason: sessionExpiredError },
+    ])
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(count('GET', '/v1/me')).toBe(2)
+    expect(count('GET', '/v1/webhooks')).toBe(2)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('a 401 from rotate never triggers another rotate', async () => {
+    server.use(http.post('*/auth/token/rotate', unauthenticated))
+    await signIn()
+    mockControl.expireSession()
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject(sessionExpiredError)
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(count('GET', '/v1/me')).toBe(1)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('a 401 from another auth endpoint is thrown without a rotate', async () => {
+    server.use(http.post('*/auth/token/revoke', unauthenticated))
+
+    await expect(client.request('/auth/token/revoke', { method: 'POST' })).rejects.toBeInstanceOf(ApiError)
+    expect(count('POST', '/auth/token/revoke')).toBe(1)
+    expect(count('POST', '/auth/token/rotate')).toBe(0)
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('rotate uses its own 419 retry', async () => {
+    server.use(http.post('*/auth/token/rotate', () => envelope(419, 'TokenMismatchException'), { once: true }))
+    await signIn()
+    mockControl.expireSession()
+
+    const me = await client.request('/v1/me', { schema: meSchema })
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(statusesOf('POST', '/auth/token/rotate')).toEqual([419, 200])
+    expect(count('GET', '/csrf')).toBe(1)
+    expect(statusesOf('GET', '/v1/me')).toEqual([401, 200])
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('independent 419 and 401 budgets cap a request at three attempts', async () => {
+    await signIn()
+    server.use(http.put('*/v1/webhooks/:id', () => envelope(419, 'TokenMismatchException'), { once: true }))
+    mockControl.expireSession()
+
+    const updated = await client.request('/v1/webhooks/3', { method: 'PUT', body: validUpdate, schema: webhookSchema })
+
+    expect(updated).toMatchObject({ id: 3, ...validUpdate })
+    expect(statusesOf('PUT', '/v1/webhooks/3')).toEqual([419, 401, 200])
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(count('GET', '/csrf')).toBe(1)
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('a late 401 after the rotate settled retries without a second rotate', async () => {
+    await signIn()
+    mockControl.expireSession()
+    server.use(
+      http.get(
+        '*/v1/webhooks',
+        async () => {
+          await until(() => statusesOf('GET', '/v1/me').includes(200))
+          await new Promise((resolve) => setTimeout(resolve, 30))
+          return unauthenticated()
+        },
+        { once: true },
+      ),
+    )
+
+    const [me, list] = await Promise.all([
+      client.request('/v1/me', { schema: meSchema }),
+      client.request('/v1/webhooks', { schema: webhookListSchema }),
+    ])
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(list.data).toHaveLength(10)
+    expect(wire.map((entry) => `${entry.method} ${entry.path} ${entry.status}`)).toEqual([
+      'GET /v1/me 401',
+      'POST /auth/token/rotate 200',
+      'GET /v1/me 200',
+      'GET /v1/webhooks 401',
+      'GET /v1/webhooks 200',
+    ])
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(count('GET', '/v1/webhooks')).toBe(2)
+    expect(sessionEnd).not.toHaveBeenCalled()
+  })
+
+  test('a late 401 after the session ended neither rotates again nor ends the session twice', async () => {
+    await signIn()
+    mockControl.revokeSession()
+    server.use(
+      http.get(
+        '*/v1/webhooks',
+        async () => {
+          await until(() => sessionEnd.mock.calls.length > 0)
+          await new Promise((resolve) => setTimeout(resolve, 30))
+          return unauthenticated()
+        },
+        { once: true },
+      ),
+    )
+
+    const results = await Promise.allSettled([client.request('/v1/me'), client.request('/v1/webhooks')])
+
+    expect(results).toMatchObject([
+      { status: 'rejected', reason: sessionExpiredError },
+      { status: 'rejected', reason: sessionExpiredError },
+    ])
+    expect(count('POST', '/auth/token/rotate')).toBe(1)
+    expect(count('GET', '/v1/webhooks')).toBe(1)
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('an unsubscribed listener is not notified', async () => {
+    const removed = vi.fn<() => void>()
+    const unsubscribe = client.onSessionEnd(removed)
+    unsubscribe()
+    await signIn()
+    mockControl.revokeSession()
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject(sessionExpiredError)
+    expect(removed).not.toHaveBeenCalled()
+    expect(sessionEnd).toHaveBeenCalledTimes(1)
   })
 })
