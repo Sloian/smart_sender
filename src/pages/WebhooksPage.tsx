@@ -17,7 +17,7 @@ import {
 import { useDebouncedCallback } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router'
+import { Link, Navigate, useLocation, useNavigationType, useSearchParams } from 'react-router'
 import { editPath, FROM_LIST_STATE, listPath, listSearch, parseListParams, toSearchParams } from '../webhooks/list-params'
 import { draftAfterNavigation, isOwnSearchCommit, searchCommitNavigation } from '../webhooks/search-history'
 import { webhookListQuery, webhookListView } from '../webhooks/webhook-queries'
@@ -102,6 +102,7 @@ export function WebhooksPage() {
           </Stack>
         </Alert>
       )}
+      {view.kind === 'empty' && params.page > 1 && <Navigate to={listPath({ ...params, page: 1 })} replace />}
       {view.kind === 'empty' && (
         <EmptyState
           title="No webhooks found"
