@@ -10,7 +10,7 @@ import {
 } from '../api/contract'
 import { getFingerprint } from './fingerprint'
 
-export const CAPTCHA_TOKEN = 'demo-captcha-token'
+const CAPTCHA_TOKEN = 'demo-captcha-token'
 
 export interface Credentials {
   email: string

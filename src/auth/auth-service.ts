@@ -21,7 +21,7 @@ export async function signIn(credentials: Credentials): Promise<Me> {
   return user
 }
 
-export async function endLocalSession(navigate: NavigateTo, to: string): Promise<void> {
+async function endLocalSession(navigate: NavigateTo, to: string): Promise<void> {
   session.clear()
   try {
     await navigate(to)
