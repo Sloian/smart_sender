@@ -34,7 +34,9 @@ export function LoginPage() {
       applyServerErrors(error, LOGIN_FIELDS, setError)
       return
     }
-    await navigate(safeRedirectPath(searchParams.get(REDIRECT_PARAM)), { replace: true })
+    const redirectTo = searchParams.get(REDIRECT_PARAM)
+    const target = safeRedirectPath(redirectTo)
+    await navigate(target, { replace: true })
   })
 
   return (
@@ -60,7 +62,7 @@ export function LoginPage() {
               label="Password"
               autoComplete="current-password"
               error={errors.password?.message}
-              aria-invalid={errors.password ? true : undefined}
+              aria-invalid={errors.password !== undefined}
               {...register('password')}
             />
             <Button type="submit" loading={isSubmitting}>

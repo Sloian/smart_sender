@@ -8,17 +8,20 @@ async function enableMocking(): Promise<void> {
   await startMocking()
 }
 
+async function bootstrap(root: HTMLElement): Promise<void> {
+  try {
+    await enableMocking()
+  } catch (error) {
+    console.error(error)
+  }
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
 
-void enableMocking()
-  .catch((error: unknown) => {
-    console.error(error)
-  })
-  .finally(() => {
-    createRoot(root).render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    )
-  })
+void bootstrap(root)

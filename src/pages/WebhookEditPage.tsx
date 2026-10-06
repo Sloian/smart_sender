@@ -18,15 +18,21 @@ const EDIT_FIELDS = ['name', 'url'] as const
 export function WebhookEditPage() {
   const { id: rawId } = useParams()
   const [searchParams] = useSearchParams()
-  const backTo = listPath(parseListParams(searchParams))
+  const listParams = parseListParams(searchParams)
+  const backTo = listPath(listParams)
   const id = parseWebhookId(rawId)
 
   return (
     <Stack maw={560}>
       <Title order={2}>Edit webhook</Title>
-      {id === null ? <WebhookNotFound backTo={backTo} /> : <WebhookEditor key={id} id={id} backTo={backTo} />}
+      <WebhookEditContent id={id} backTo={backTo} />
     </Stack>
   )
+}
+
+function WebhookEditContent({ id, backTo }: { id: number | null; backTo: string }) {
+  if (id === null) return <WebhookNotFound backTo={backTo} />
+  return <WebhookEditor key={id} id={id} backTo={backTo} />
 }
 
 function WebhookNotFound({ backTo }: { backTo: string }) {
@@ -88,15 +94,19 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
     }
   }, [location.key])
 
+  function isStillOnSubmittedEntry(submittedFrom: string): boolean {
+    return activeKey.current === submittedFrom
+  }
+
   async function submit(values: EditValues) {
     const submittedFrom = location.key
     try {
       await mutation.mutateAsync(values)
     } catch (error) {
-      if (activeKey.current === submittedFrom) applyServerErrors(error, EDIT_FIELDS, setError)
+      if (isStillOnSubmittedEntry(submittedFrom)) applyServerErrors(error, EDIT_FIELDS, setError)
       return
     }
-    if (activeKey.current === submittedFrom) await leave()
+    if (isStillOnSubmittedEntry(submittedFrom)) await leave()
   }
 
   async function leave() {
@@ -104,8 +114,10 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
     else await navigate(backTo, { replace: true })
   }
 
+  const onSubmit = handleSubmit(submit)
+
   return (
-    <form onSubmit={(event) => void handleSubmit(submit)(event)} noValidate>
+    <form onSubmit={(event) => void onSubmit(event)} noValidate>
       <Stack>
         {errors.root?.server && <Alert color="red">{errors.root.server.message}</Alert>}
         <TextInput label="Name" autoComplete="off" error={errors.name?.message} {...register('name')} />

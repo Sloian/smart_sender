@@ -29,12 +29,13 @@ const seedNames = ['Order', 'Lead', 'Payment'] as const
 function seedWebhooks(): Webhook[] {
   return Array.from({ length: 28 }, (_, index) => {
     const id = index + 1
+    const createdAt = new Date(Date.UTC(2026, 0, id))
     return {
       id,
       name: `${seedNames[id % 3] ?? 'Order'} hook ${id}`,
       url: `https://example.com/hooks/${id}`,
       active: id % 4 !== 0,
-      created_at: new Date(Date.UTC(2026, 0, id)).toISOString(),
+      created_at: createdAt.toISOString(),
     }
   })
 }
