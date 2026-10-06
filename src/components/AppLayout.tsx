@@ -23,11 +23,15 @@ export function AppLayout() {
   return (
     <AppShell header={{ height: 60 }} padding="md">
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Title order={4}>Smart Sender</Title>
-          <Group>
-            <Text size="sm">
-              {user.name} · {user.email}
+          <Group gap="sm" wrap="nowrap" miw={0}>
+            <Text size="sm" truncate>
+              {user.name}
+              <Text span size="sm" visibleFrom="sm">
+                {' '}
+                · {user.email}
+              </Text>
             </Text>
             <Button variant="default" size="xs" loading={signingOut} onClick={() => void handleSignOut()}>
               Log out
