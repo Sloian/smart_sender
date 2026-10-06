@@ -1,0 +1,237 @@
+import { http, HttpResponse } from 'msw'
+import { beforeEach, describe, expect, test, vi, type Mock } from 'vitest'
+import { ZodError } from 'zod'
+import { BASE_URL, count, server, setupMockServer, wire } from '../test/mock-server'
+import { CSRF_TOKEN, MOCK_USER } from '../mocks/state'
+import { ApiError, isApiError } from './api-error'
+import { loginResponseSchema, webhookListSchema, webhookSchema } from './contract'
+import { createHttpClient, type HttpClient } from './http-client'
+
+setupMockServer()
+
+const FINGERPRINT = 'a'.repeat(32)
+
+let client: HttpClient
+let sessionEnd: Mock<() => void>
+
+const envelope = (status: number, type: string, message = 'Rejected by test override.') =>
+  HttpResponse.json({ error: { type, message } }, { status })
+
+const statusesOf = (method: string, path: string) =>
+  wire.filter((entry) => entry.method === method && entry.path === path).map((entry) => entry.status)
+
+async function login() {
+  const { device_session_token } = await client.request('/auth/login', {
+    method: 'POST',
+    headers: { 'X-Captcha-Token': 'test' },
+    body: { email: MOCK_USER.email, password: MOCK_USER.password, fingerprint: FINGERPRINT },
+    schema: loginResponseSchema,
+  })
+  await client.request('/auth/token/issue', {
+    method: 'POST',
+    body: { device_session_token, fingerprint: FINGERPRINT },
+  })
+}
+
+async function signIn() {
+  await login()
+  wire.length = 0
+}
+
+const validUpdate = { name: 'Renamed hook', url: 'https://example.com/renamed' }
+
+beforeEach(() => {
+  client = createHttpClient({ baseUrl: BASE_URL })
+  client.setFingerprintProvider(() => FINGERPRINT)
+  sessionEnd = vi.fn<() => void>()
+  client.onSessionEnd(sessionEnd)
+})
+
+describe('transport and csrf', () => {
+  test('parallel first requests share one csrf bootstrap that goes first on the wire', async () => {
+    await Promise.allSettled([
+      client.request('/v1/me'),
+      client.request('/v1/webhooks'),
+      client.request('/v1/webhooks/1'),
+    ])
+
+    expect(count('GET', '/csrf')).toBe(1)
+    expect(wire[0]?.path).toBe('/csrf')
+  })
+
+  test('every request carries X-Requested-With and only POST and PUT carry the csrf token', async () => {
+    await login()
+    await client.request('/v1/me')
+    await client.request('/v1/webhooks/2', { method: 'PUT', body: validUpdate })
+
+    expect(wire.length).toBeGreaterThanOrEqual(5)
+    expect(wire.every((entry) => entry.requestedWith === 'XMLHttpRequest')).toBe(true)
+    const writes = wire.filter((entry) => entry.method === 'POST' || entry.method === 'PUT')
+    expect(writes.map((entry) => entry.path)).toEqual(['/auth/login', '/auth/token/issue', '/v1/webhooks/2'])
+    expect(writes.every((entry) => entry.csrfToken === CSRF_TOKEN)).toBe(true)
+    const reads = wire.filter((entry) => entry.method === 'GET' && entry.path.startsWith('/v1/'))
+    expect(reads).toHaveLength(1)
+    expect(reads.every((entry) => entry.csrfToken === null)).toBe(true)
+  })
+
+  test('caller headers cannot drop or forge the mandatory headers', async () => {
+    await signIn()
+
+    await client.request('/v1/webhooks/2', {
+      method: 'PUT',
+      body: validUpdate,
+      headers: { 'X-Requested-With': 'fetch', 'X-CSRF-TOKEN': 'forged' },
+    })
+    await client.request('/v1/webhooks/3', {
+      method: 'PUT',
+      body: validUpdate,
+      headers: { 'x-requested-with': 'fetch', 'x-csrf-token': 'forged' },
+    })
+
+    expect(statusesOf('PUT', '/v1/webhooks/2')).toEqual([200])
+    expect(statusesOf('PUT', '/v1/webhooks/3')).toEqual([200])
+    expect(wire.every((entry) => entry.requestedWith === 'XMLHttpRequest')).toBe(true)
+    expect(wire.filter((entry) => entry.method === 'PUT').every((entry) => entry.csrfToken === CSRF_TOKEN)).toBe(true)
+  })
+
+  test('a 419 refetches the csrf token once and retries the request', async () => {
+    await signIn()
+    server.use(http.put('*/v1/webhooks/:id', () => envelope(419, 'TokenMismatchException'), { once: true }))
+
+    const updated = await client.request('/v1/webhooks/1', { method: 'PUT', body: validUpdate, schema: webhookSchema })
+
+    expect(updated.name).toBe(validUpdate.name)
+    expect(count('GET', '/csrf')).toBe(1)
+    expect(statusesOf('PUT', '/v1/webhooks/1')).toEqual([419, 200])
+  })
+
+  test('a second 419 rejects with TokenMismatchException after one retry', async () => {
+    await signIn()
+    server.use(http.put('*/v1/webhooks/:id', () => envelope(419, 'TokenMismatchException')))
+
+    await expect(client.request('/v1/webhooks/1', { method: 'PUT', body: validUpdate })).rejects.toMatchObject({
+      status: 419,
+      type: 'TokenMismatchException',
+    })
+    expect(count('PUT', '/v1/webhooks/1')).toBe(2)
+    expect(count('GET', '/csrf')).toBe(1)
+  })
+
+  test('parallel 419s share one csrf refetch', async () => {
+    await signIn()
+    server.use(
+      http.put('*/v1/webhooks/1', () => envelope(419, 'TokenMismatchException'), { once: true }),
+      http.put('*/v1/webhooks/2', () => envelope(419, 'TokenMismatchException'), { once: true }),
+    )
+
+    const [first, second] = await Promise.all([
+      client.request('/v1/webhooks/1', { method: 'PUT', body: validUpdate, schema: webhookSchema }),
+      client.request('/v1/webhooks/2', { method: 'PUT', body: validUpdate, schema: webhookSchema }),
+    ])
+
+    expect([first.id, second.id]).toEqual([1, 2])
+    expect(count('GET', '/csrf')).toBe(1)
+    expect(statusesOf('PUT', '/v1/webhooks/1')).toEqual([419, 200])
+    expect(statusesOf('PUT', '/v1/webhooks/2')).toEqual([419, 200])
+  })
+
+  test('a failed csrf bootstrap rejects with ApiError and the next request bootstraps again', async () => {
+    server.use(http.get('*/csrf', () => new HttpResponse(null, { status: 500 }), { once: true }))
+
+    const error: unknown = await client.request('/v1/me').catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 500, type: 'UnknownError' })
+
+    await login()
+
+    expect(count('GET', '/csrf')).toBe(2)
+    expect(count('GET', '/v1/me')).toBe(0)
+    expect(statusesOf('POST', '/auth/token/issue')).toEqual([200])
+  })
+
+  test('a csrf response without the token header rejects with ApiError', async () => {
+    server.use(http.get('*/csrf', () => new HttpResponse(null, { status: 204 }), { once: true }))
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject({ status: 204, type: 'UnknownError' })
+    expect(count('GET', '/v1/me')).toBe(0)
+  })
+
+  test('a 422 maps the payload to field errors', async () => {
+    await signIn()
+
+    const error: unknown = await client
+      .request('/v1/webhooks/1', { method: 'PUT', body: { name: '', url: 'ftp://x' } })
+      .catch((caught: unknown) => caught)
+
+    expect(isApiError(error)).toBe(true)
+    expect(error).toMatchObject({
+      status: 422,
+      type: 'ValidationException',
+      message: 'The given data was invalid.',
+      fieldErrors: { name: ['The name field is required.'], url: ['The url must be a valid URL.'] },
+    })
+  })
+
+  test('a 404 rejects with NotFoundException', async () => {
+    await signIn()
+
+    await expect(client.request('/v1/webhooks/999')).rejects.toMatchObject({ status: 404, type: 'NotFoundException' })
+  })
+
+  test('a non-json error body becomes an UnknownError ApiError', async () => {
+    server.use(
+      http.get(
+        '*/v1/me',
+        () => new HttpResponse('<html>bad gateway</html>', { status: 502, headers: { 'Content-Type': 'text/html' } }),
+      ),
+    )
+
+    const error: unknown = await client.request('/v1/me').catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).not.toBeInstanceOf(SyntaxError)
+    expect(error).toMatchObject({ status: 502, type: 'UnknownError', fieldErrors: {} })
+  })
+
+  test('an unknown error type becomes UnknownError and keeps the message', async () => {
+    server.use(http.get('*/v1/me', () => envelope(400, 'WeirdException', 'Something odd happened.')))
+
+    await expect(client.request('/v1/me')).rejects.toMatchObject({
+      status: 400,
+      type: 'UnknownError',
+      message: 'Something odd happened.',
+      fieldErrors: {},
+    })
+  })
+
+  test('a schema validates the success body', async () => {
+    await signIn()
+
+    const webhook = await client.request('/v1/webhooks/1', { schema: webhookSchema })
+    expect(webhook.id).toBe(1)
+
+    server.use(http.get('*/v1/webhooks/1', () => HttpResponse.json({ id: 'x' })))
+    await expect(client.request('/v1/webhooks/1', { schema: webhookSchema })).rejects.toBeInstanceOf(ZodError)
+  })
+
+  test('query values are sent as search params and empty ones are omitted', async () => {
+    await signIn()
+    const searches: string[] = []
+    server.use(
+      http.get('*/v1/webhooks', ({ request }) => {
+        searches.push(new URL(request.url).search)
+      }),
+    )
+
+    const page = await client.request('/v1/webhooks', {
+      query: { page: 2, limit: 10, search: '' },
+      schema: webhookListSchema,
+    })
+    const filtered = await client.request('/v1/webhooks', { query: { search: 'hook 1' }, schema: webhookListSchema })
+
+    expect(page.paging.pages.current).toBe(2)
+    expect(page.data).toHaveLength(10)
+    expect(filtered.paging.results.total).toBe(11)
+    expect(searches).toEqual(['?page=2&limit=10', '?search=hook+1'])
+  })
+})
