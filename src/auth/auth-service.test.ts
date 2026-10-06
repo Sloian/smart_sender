@@ -148,6 +148,21 @@ describe('auth service', () => {
     expect(count('POST', '/auth/token/revoke')).toBe(0)
   })
 
+  test('a failed navigation still clears the cache and lets sign out run again', async () => {
+    await signIn(credentials)
+    queryClient.setQueryData(['probe'], 1)
+    const failingNavigate = vi.fn<NavigateTo>(() => Promise.reject(new Error('navigation failed')))
+
+    await expect(signOut(failingNavigate)).rejects.toThrow('navigation failed')
+
+    expect(session.user()).toBeNull()
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+
+    const navigate = navigateSpy()
+    await expect(signOut(navigate)).resolves.toBeUndefined()
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/login')
+  })
+
   test('a protected request that fails during sign out does not start the session expired flow', async () => {
     const expiredNavigate = navigateSpy()
     unsubscribe = subscribeToSessionEnd(expiredNavigate, () => webhooksLocation)

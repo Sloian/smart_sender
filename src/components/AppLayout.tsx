@@ -11,9 +11,13 @@ export function AppLayout() {
 
   async function handleSignOut() {
     setSigningOut(true)
-    await signOut(async (to) => {
-      await navigate(to, { replace: true })
-    })
+    try {
+      await signOut(async (to) => {
+        await navigate(to, { replace: true })
+      })
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   return (

@@ -23,8 +23,11 @@ export async function signIn(credentials: Credentials): Promise<Me> {
 
 export async function endLocalSession(navigate: NavigateTo, to: string): Promise<void> {
   session.clear()
-  await navigate(to)
-  queryClient.clear()
+  try {
+    await navigate(to)
+  } finally {
+    queryClient.clear()
+  }
 }
 
 let pendingSignOut: Promise<void> | null = null
