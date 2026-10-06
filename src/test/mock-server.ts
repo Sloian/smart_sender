@@ -9,6 +9,7 @@ export const BASE_URL = 'http://localhost'
 export interface WireEntry {
   method: string
   path: string
+  search: string
   status: number
   requestedWith: string | null
   csrfToken: string | null
@@ -29,6 +30,7 @@ export function setupMockServer(): void {
       wire.push({
         method: request.method,
         path: new URL(request.url).pathname,
+        search: new URL(request.url).search,
         status: response.status,
         requestedWith: request.headers.get(REQUESTED_WITH_HEADER),
         csrfToken: request.headers.get(CSRF_HEADER),
