@@ -1,4 +1,5 @@
 import { redirect, type LoaderFunctionArgs } from 'react-router'
+import { isRecord } from '../lib/is-record'
 
 export interface ListParams {
   page: number
@@ -9,17 +10,22 @@ export const WEBHOOKS_PATH = '/webhooks'
 
 const PAGE_PARAM = 'page'
 const SEARCH_PARAM = 'search'
-const FIRST_PAGE = 1
+const POSITIVE_INT_PATTERN = /^[1-9]\d*$/
+
+export const FIRST_PAGE = 1
 
 function parsePositiveInt(value: string | null | undefined): number | null {
-  if (!value || !/^[1-9]\d*$/.test(value)) return null
+  if (!value) return null
+  if (!POSITIVE_INT_PATTERN.test(value)) return null
   const parsed = Number(value)
-  return Number.isSafeInteger(parsed) ? parsed : null
+  if (!Number.isSafeInteger(parsed)) return null
+  return parsed
 }
 
 export function parseListParams(searchParams: URLSearchParams): ListParams {
+  const rawPage = searchParams.get(PAGE_PARAM)
   return {
-    page: parsePositiveInt(searchParams.get(PAGE_PARAM)) ?? FIRST_PAGE,
+    page: parsePositiveInt(rawPage) ?? FIRST_PAGE,
     search: searchParams.get(SEARCH_PARAM) ?? '',
   }
 }
@@ -33,7 +39,8 @@ export function toSearchParams({ page, search }: ListParams): URLSearchParams {
 
 export function listSearch(params: ListParams): string {
   const query = toSearchParams(params).toString()
-  return query ? `?${query}` : ''
+  if (query === '') return ''
+  return `?${query}`
 }
 
 export function listPath(params: ListParams): string {
@@ -41,13 +48,14 @@ export function listPath(params: ListParams): string {
 }
 
 export function editPath(id: number, params: ListParams): string {
-  return `${WEBHOOKS_PATH}/${encodeURIComponent(String(id))}${listSearch(params)}`
+  return `${WEBHOOKS_PATH}/${id}${listSearch(params)}`
 }
 
 export const FROM_LIST_STATE = { fromList: true } as const
 
 export function isFromList(state: unknown): boolean {
-  return typeof state === 'object' && state !== null && 'fromList' in state && state.fromList === true
+  if (!isRecord(state)) return false
+  return state.fromList === true
 }
 
 export function parseWebhookId(value: string | undefined): number | null {
@@ -55,11 +63,15 @@ export function parseWebhookId(value: string | undefined): number | null {
 }
 
 export function canonicalListTarget(url: URL): string | null {
-  const expected = listSearch(parseListParams(url.searchParams))
-  return url.search === expected ? null : WEBHOOKS_PATH + expected
+  const params = parseListParams(url.searchParams)
+  const expected = listSearch(params)
+  if (url.search === expected) return null
+  return WEBHOOKS_PATH + expected
 }
 
 export function canonicalListUrl({ request }: LoaderFunctionArgs): Response | null {
-  const target = canonicalListTarget(new URL(request.url))
-  return target === null ? null : redirect(target)
+  const requestedUrl = new URL(request.url)
+  const target = canonicalListTarget(requestedUrl)
+  if (target === null) return null
+  return redirect(target)
 }

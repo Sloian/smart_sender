@@ -34,16 +34,8 @@ interface WebhookListState {
   page: number
 }
 
-function decideView(data: WebhookList | undefined, error: unknown, page: number | null): WebhookListView {
-  if (!data) {
-    if (error) return { kind: 'error', message: errorMessage(error) }
-    return { kind: 'loading' }
-  }
+function rowsView(data: WebhookList): WebhookListView {
   const { pages, results } = data.paging
-  if (results.total === 0) return { kind: 'empty' }
-  if (data.data.length === 0 || (page !== null && pages.current !== page)) {
-    return { kind: 'out-of-range', lastPage: pages.last }
-  }
   const from = (pages.current - 1) * results.limitation + 1
   return {
     kind: 'rows',
@@ -55,9 +47,26 @@ function decideView(data: WebhookList | undefined, error: unknown, page: number 
   }
 }
 
+function placeholderView(data: WebhookList | undefined): WebhookListView {
+  if (!data) return { kind: 'loading' }
+  if (data.paging.results.total === 0) return { kind: 'loading' }
+  if (data.data.length === 0) return { kind: 'loading' }
+  return rowsView(data)
+}
+
+function missingDataView(error: unknown): WebhookListView {
+  if (error) return { kind: 'error', message: errorMessage(error) }
+  return { kind: 'loading' }
+}
+
 export function webhookListView({ data, error, isPlaceholderData, page }: WebhookListState): WebhookListView {
-  const view = decideView(data, error, isPlaceholderData ? null : page)
-  return isPlaceholderData && view.kind !== 'rows' ? { kind: 'loading' } : view
+  if (isPlaceholderData) return placeholderView(data)
+  if (!data) return missingDataView(error)
+  const { pages, results } = data.paging
+  if (results.total === 0) return { kind: 'empty' }
+  if (data.data.length === 0) return { kind: 'out-of-range', lastPage: pages.last }
+  if (pages.current !== page) return { kind: 'out-of-range', lastPage: pages.last }
+  return rowsView(data)
 }
 
 export function webhookQuery(id: number) {
@@ -92,8 +101,9 @@ export function replaceWebhookInList(list: WebhookList, updated: Webhook): Webho
 
 export function applyWebhookUpdate(client: QueryClient, updated: Webhook): void {
   client.setQueryData(webhookKeys.detail(updated.id), updated)
-  client.setQueriesData<WebhookList>({ queryKey: webhookKeys.lists() }, (list) =>
-    list ? replaceWebhookInList(list, updated) : list,
-  )
+  client.setQueriesData<WebhookList>({ queryKey: webhookKeys.lists() }, (list) => {
+    if (list === undefined) return undefined
+    return replaceWebhookInList(list, updated)
+  })
   void client.invalidateQueries({ queryKey: webhookKeys.lists() })
 }

@@ -1,4 +1,5 @@
 import { NavigationType } from 'react-router'
+import { isRecord } from '../lib/is-record'
 
 interface SearchCommit {
   from: string
@@ -21,11 +22,19 @@ interface CurrentEntry {
 }
 
 function searchCommitOf(state: unknown): SearchCommit | null {
-  if (typeof state !== 'object' || state === null || !('searchCommit' in state)) return null
+  if (!isRecord(state)) return null
   const commit = state.searchCommit
-  if (typeof commit !== 'object' || commit === null || !('from' in commit) || !('origin' in commit)) return null
+  if (!isRecord(commit)) return null
   const { from, origin } = commit
-  return typeof from === 'string' && typeof origin === 'string' ? { from, origin } : null
+  if (typeof from !== 'string') return null
+  if (typeof origin !== 'string') return null
+  return { from, origin }
+}
+
+function previousCommit(current: CurrentEntry, navigationType: NavigationType, typed: boolean): SearchCommit | null {
+  if (!typed) return null
+  if (navigationType === NavigationType.Pop) return null
+  return searchCommitOf(current.state)
 }
 
 export function searchCommitNavigation(
@@ -34,16 +43,22 @@ export function searchCommitNavigation(
   target: string,
   typed: boolean,
 ): SearchCommitNavigation {
-  const previous = typed && navigationType !== NavigationType.Pop ? searchCommitOf(current.state) : null
-  const replace = previous !== null && target !== previous.origin
-  const origin = replace ? previous.origin : current.search
-  return { replace, state: { searchCommit: { from: current.key, origin } } }
+  const previous = previousCommit(current, navigationType, typed)
+  if (previous !== null && target !== previous.origin) {
+    return { replace: true, state: { searchCommit: { from: current.key, origin: previous.origin } } }
+  }
+  return { replace: false, state: { searchCommit: { from: current.key, origin: current.search } } }
 }
 
 export function isOwnSearchCommit(state: unknown, previousKey: string, navigationType: NavigationType): boolean {
-  return navigationType !== NavigationType.Pop && searchCommitOf(state)?.from === previousKey
+  if (navigationType === NavigationType.Pop) return false
+  const commit = searchCommitOf(state)
+  if (commit === null) return false
+  return commit.from === previousKey
 }
 
 export function draftAfterNavigation(draft: string | null, search: string, ownCommit: boolean): string | null {
-  return ownCommit && draft !== search ? draft : null
+  if (!ownCommit) return null
+  if (draft === search) return null
+  return draft
 }

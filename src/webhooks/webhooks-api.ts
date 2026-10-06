@@ -11,7 +11,7 @@ import type { ListParams } from './list-params'
 export const PAGE_SIZE = 10
 
 function webhookPath(id: number): string {
-  return '/v1/webhooks/' + encodeURIComponent(String(id))
+  return `/v1/webhooks/${id}`
 }
 
 export function fetchWebhooks({ page, search }: ListParams, signal?: AbortSignal): Promise<WebhookList> {
