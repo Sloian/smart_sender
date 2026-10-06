@@ -60,6 +60,7 @@ export function LoginPage() {
               label="Password"
               autoComplete="current-password"
               error={errors.password?.message}
+              aria-invalid={errors.password ? true : undefined}
               {...register('password')}
             />
             <Button type="submit" loading={isSubmitting}>
