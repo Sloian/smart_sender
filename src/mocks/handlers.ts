@@ -129,7 +129,7 @@ export const handlers = [
     const params = new URL(request.url).searchParams
     const page = Math.max(1, parseIntParam(params.get('page')) || 1)
     const limit = Math.min(MAX_LIMIT, Math.max(1, parseIntParam(params.get('limit')) || DEFAULT_LIMIT))
-    const search = (params.get('search') ?? '').trim().toLowerCase()
+    const search = (params.get('search') ?? '').toLowerCase()
     const filtered = state.webhooks.filter((webhook) => webhook.name.toLowerCase().includes(search))
     const body: WebhookList = {
       data: filtered.slice((page - 1) * limit, page * limit),

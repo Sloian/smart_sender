@@ -402,12 +402,12 @@ describe('webhook list', () => {
     expect(page.paging).toEqual({ pages: { current: 1, last: 1 }, results: { total: 0, limitation: 10 } })
   })
 
-  test('search is trimmed', async () => {
+  test('search is a literal substring including whitespace', async () => {
     await signIn()
-    const padded = await list({ search: '  lead  ' })
-    const plain = await list({ search: 'lead' })
-    expect(padded.paging.results.total).toBe(plain.paging.results.total)
-    expect(plain.paging.results.total).toBe(10)
+    expect((await list({ search: 'lead' })).paging.results.total).toBe(10)
+    expect((await list({ search: ' hook 1' })).paging.results.total).toBe(11)
+    expect((await list({ search: '  lead  ' })).paging.results.total).toBe(0)
+    expect((await list({ search: '  ' })).paging.results.total).toBe(0)
   })
 
   test('an empty search returns every webhook', async () => {
