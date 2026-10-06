@@ -1,6 +1,6 @@
 import type { ZodType } from 'zod'
 import { API_UNAVAILABLE_MESSAGE, ApiError } from './api-error'
-import { CSRF_HEADER, REQUESTED_WITH_HEADER, REQUESTED_WITH_VALUE } from './contract'
+import { CSRF_HEADER, REQUESTED_WITH_HEADER, REQUESTED_WITH_VALUE, type FingerprintRequest } from './contract'
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT'
 
@@ -39,7 +39,21 @@ function reportAsync(error: unknown) {
   })
 }
 
-const isJson = (response: Response) => response.headers.get('Content-Type')?.includes('json') ?? false
+function isJson(response: Response): boolean {
+  const contentType = response.headers.get('Content-Type')
+  if (contentType === null) return false
+  return contentType.includes('json')
+}
+
+function serializeBody(body: unknown): string | undefined {
+  if (body === undefined) return undefined
+  return JSON.stringify(body)
+}
+
+function parseSuccessBody<T>(body: unknown, schema: ZodType<T> | undefined): T {
+  if (schema) return schema.parse(body)
+  return body as T
+}
 
 async function readBody(response: Response, strict = false): Promise<unknown> {
   const text = await response.text()
@@ -62,9 +76,13 @@ export function createHttpClient(config: HttpClientConfig) {
   let sessionGeneration = 0
   let endedAtGeneration = 0
 
-  const doFetch = (url: URL, init: RequestInit) => (config.fetch ?? globalThis.fetch)(url, init)
   const reportError = config.reportError ?? reportAsync
   const origin = new URL(config.baseUrl).origin
+
+  function doFetch(url: URL, init: RequestInit): Promise<Response> {
+    const fetchImpl = config.fetch ?? globalThis.fetch
+    return fetchImpl(url, init)
+  }
 
   function buildUrl(path: string, query: Record<string, QueryValue> = {}) {
     const url = new URL(path, config.baseUrl)
@@ -85,26 +103,39 @@ export function createHttpClient(config: HttpClientConfig) {
     return headers
   }
 
-  function fetchCsrf(): Promise<string> {
-    csrfRequest ??= (async () => {
-      const response = await doFetch(buildUrl(CSRF_PATH), {
-        headers: { [REQUESTED_WITH_HEADER]: REQUESTED_WITH_VALUE },
-      })
-      const token = response.headers.get(CSRF_HEADER)
-      if (!response.ok || !token) {
-        throw ApiError.fromBody(response.status, await readBody(response), API_UNAVAILABLE_MESSAGE)
-      }
-      csrfToken = token
-      csrfGeneration += 1
-      return token
-    })().finally(() => {
-      csrfRequest = null
+  async function requestCsrfToken(): Promise<string> {
+    const csrfUrl = buildUrl(CSRF_PATH)
+    const response = await doFetch(csrfUrl, {
+      headers: { [REQUESTED_WITH_HEADER]: REQUESTED_WITH_VALUE },
     })
+    const token = response.headers.get(CSRF_HEADER)
+    if (!response.ok || !token) {
+      const body = await readBody(response)
+      throw ApiError.fromBody(response.status, body, API_UNAVAILABLE_MESSAGE)
+    }
+    csrfToken = token
+    csrfGeneration += 1
+    return token
+  }
+
+  function fetchCsrf(): Promise<string> {
+    if (csrfRequest === null) {
+      csrfRequest = requestCsrfToken().finally(() => {
+        csrfRequest = null
+      })
+    }
     return csrfRequest
   }
 
   async function ensureCsrf(): Promise<string> {
-    return csrfToken ?? fetchCsrf()
+    if (csrfToken !== null) return csrfToken
+    return fetchCsrf()
+  }
+
+  async function refreshCsrf(csrfGenerationAtSend: number): Promise<void> {
+    if (csrfGeneration !== csrfGenerationAtSend) return
+    csrfToken = null
+    await fetchCsrf()
   }
 
   function invalidateSession() {
@@ -123,23 +154,37 @@ export function createHttpClient(config: HttpClientConfig) {
     }
   }
 
-  function rotate(): Promise<void> {
+  async function runRotate(body: FingerprintRequest): Promise<void> {
     const startedAt = sessionGeneration
-    rotateRequest ??= send<unknown>(ROTATE_PATH, { method: 'POST', body: { fingerprint: fingerprint() } })
-      .then(
-        () => {
-          if (endedAtGeneration > startedAt) throw new ApiError(401, 'AuthenticationException', 'Session ended.')
-          sessionGeneration += 1
-        },
-        (error: unknown) => {
-          if (endedAtGeneration <= startedAt) endSession()
-          throw error
-        },
-      )
-      .finally(() => {
+    try {
+      await send(ROTATE_PATH, { method: 'POST', body })
+    } catch (error) {
+      if (endedAtGeneration <= startedAt) endSession()
+      throw error
+    }
+    if (endedAtGeneration > startedAt) throw new ApiError(401, 'AuthenticationException', 'Session ended.')
+    sessionGeneration += 1
+  }
+
+  function rotate(): Promise<void> {
+    if (rotateRequest === null) {
+      const body: FingerprintRequest = { fingerprint: fingerprint() }
+      rotateRequest = runRotate(body).finally(() => {
         rotateRequest = null
       })
+    }
     return rotateRequest
+  }
+
+  async function renewSession(generationAtSend: number, error: ApiError): Promise<void> {
+    const rotatedSinceSend = generationAtSend !== sessionGeneration && rotateRequest === null
+    if (rotatedSinceSend) return
+    const rotation = rotate()
+    try {
+      await rotation
+    } catch {
+      throw error
+    }
   }
 
   async function send<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
@@ -157,23 +202,21 @@ export function createHttpClient(config: HttpClientConfig) {
       const response = await doFetch(url, {
         method,
         headers: buildHeaders(method, token, options),
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: serializeBody(options.body),
         signal: options.signal,
       })
 
       if (response.ok) {
         const body = await readBody(response, true)
-        return options.schema ? options.schema.parse(body) : (body as T)
+        return parseSuccessBody(body, options.schema)
       }
 
-      const error = ApiError.fromBody(response.status, await readBody(response))
+      const errorBody = await readBody(response)
+      const error = ApiError.fromBody(response.status, errorBody)
 
       if (response.status === 419 && !csrfRetried) {
         csrfRetried = true
-        if (csrfGeneration === csrfGenerationAtSend) {
-          csrfToken = null
-          await fetchCsrf()
-        }
+        await refreshCsrf(csrfGenerationAtSend)
         continue
       }
 
@@ -184,10 +227,7 @@ export function createHttpClient(config: HttpClientConfig) {
           throw error
         }
         authRetried = true
-        if (generationAtSend !== sessionGeneration && !rotateRequest) continue
-        await (rotateRequest ?? rotate()).catch(() => {
-          throw error
-        })
+        await renewSession(generationAtSend, error)
         continue
       }
 
@@ -198,7 +238,8 @@ export function createHttpClient(config: HttpClientConfig) {
   function request<T>(path: string, options: RequestOptions<T> & { schema: ZodType<T> }): Promise<T>
   function request(path: string, options?: Omit<RequestOptions<unknown>, 'schema'>): Promise<unknown>
   async function request(path: string, options: RequestOptions<unknown> = {}): Promise<unknown> {
-    if (buildUrl(path).pathname === ROTATE_PATH) throw new Error('Session rotation is managed by the http client.')
+    const target = buildUrl(path)
+    if (target.pathname === ROTATE_PATH) throw new Error('Session rotation is managed by the http client.')
     return send(path, options)
   }
 
