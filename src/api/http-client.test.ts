@@ -267,7 +267,8 @@ describe('session rotation', () => {
   const sessionExpiredError = { name: 'ApiError', status: 401, type: 'AuthenticationException' }
 
   async function until(condition: () => boolean) {
-    for (let attempt = 0; attempt < 400 && !condition(); attempt += 1) {
+    for (let attempt = 0; !condition(); attempt += 1) {
+      if (attempt === 400) throw new Error('Timed out waiting for the condition.')
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
   }
