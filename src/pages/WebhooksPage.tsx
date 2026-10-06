@@ -16,34 +16,47 @@ import {
 } from '@mantine/core'
 import { useDebouncedCallback } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router'
 import { editPath, listPath, parseListParams, toSearchParams } from '../webhooks/list-params'
+import { draftAfterNavigation, isOwnSearchCommit, searchCommitState } from '../webhooks/search-history'
 import { webhookListQuery, webhookListView } from '../webhooks/webhook-queries'
 
 const SEARCH_DEBOUNCE_MS = 300
 
 export function WebhooksPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigationType = useNavigationType()
   const params = parseListParams(searchParams)
   const { data, error, isPlaceholderData, isFetching, refetch } = useQuery(webhookListQuery(params))
   const view = webhookListView({ data, error, isPlaceholderData })
   const [draft, setDraft] = useState<string | null>(null)
+  const [locationKey, setLocationKey] = useState(location.key)
 
-  if (draft !== null && draft === params.search) setDraft(null)
+  if (locationKey !== location.key) {
+    setLocationKey(location.key)
+    setDraft(draftAfterNavigation(draft, params.search, isOwnSearchCommit(location.state, locationKey, navigationType)))
+  }
 
   const searchValue = draft ?? params.search
 
   function commitSearch(value: string) {
     if (value === params.search) return
-    setSearchParams(toSearchParams({ page: 1, search: value }))
+    setSearchParams(toSearchParams({ page: 1, search: value }), { state: searchCommitState(location.key) })
   }
 
-  const debouncedCommit = useDebouncedCallback(commitSearch, SEARCH_DEBOUNCE_MS)
+  const debouncedCommit = useDebouncedCallback(() => {
+    if (draft !== null) commitSearch(draft)
+  }, SEARCH_DEBOUNCE_MS)
+
+  useEffect(() => {
+    if (draft === null) debouncedCommit.cancel()
+  }, [draft, debouncedCommit])
 
   function changeSearch(value: string) {
     setDraft(value)
-    debouncedCommit(value)
+    debouncedCommit()
   }
 
   function clearSearch() {
