@@ -29,6 +29,10 @@ const ROTATE_PATH = '/auth/token/rotate'
 const needsCsrf = (method: HttpMethod) => method !== 'GET'
 const isRotatable = (path: string) => path.startsWith('/v1/')
 
+function missingFingerprint(): string {
+  throw new Error('Fingerprint provider is not configured.')
+}
+
 function reportAsync(error: unknown) {
   queueMicrotask(() => {
     throw error
@@ -47,7 +51,7 @@ async function readBody(response: Response): Promise<unknown> {
 
 export function createHttpClient(config: HttpClientConfig) {
   const listeners = new Set<SessionEndListener>()
-  let fingerprint: () => string = () => ''
+  let fingerprint: () => string = missingFingerprint
   let csrfToken: string | null = null
   let csrfRequest: Promise<string> | null = null
   let csrfGeneration = 0

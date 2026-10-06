@@ -567,6 +567,23 @@ describe('session rotation', () => {
     expect(reportError).toHaveBeenCalledExactlyOnceWith(failure)
   })
 
+  test('a rotate without a fingerprint provider fails loudly instead of ending the session', async () => {
+    client = createHttpClient({ baseUrl: BASE_URL })
+    client.onSessionEnd(sessionEnd)
+    await signIn()
+    mockControl.expireSession()
+
+    await expect(client.request('/v1/me')).rejects.toThrow('Fingerprint provider is not configured.')
+    expect(count('POST', '/auth/token/rotate')).toBe(0)
+    expect(sessionEnd).not.toHaveBeenCalled()
+
+    client.setFingerprintProvider(() => FINGERPRINT)
+    const me = await client.request('/v1/me', { schema: meSchema })
+
+    expect(me.email).toBe(MOCK_USER.email)
+    expect(statusesOf('POST', '/auth/token/rotate')).toEqual([200])
+  })
+
   test('an unsubscribed listener is not notified', async () => {
     const removed = vi.fn<() => void>()
     const unsubscribe = client.onSessionEnd(removed)
