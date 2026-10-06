@@ -123,6 +123,31 @@ describe('auth service', () => {
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
   })
 
+  test('sign out aborts a revoke that does not answer in time and still ends the local session', async () => {
+    await signIn(credentials)
+    queryClient.setQueryData(['probe'], 1)
+    server.use(
+      http.post(
+        '*/auth/token/revoke',
+        async ({ request }) => {
+          await new Promise((resolve) => {
+            request.signal.addEventListener('abort', resolve, { once: true })
+          })
+          return HttpResponse.error()
+        },
+        { once: true },
+      ),
+    )
+    const navigate = navigateSpy()
+
+    await expect(signOut(navigate, { revokeTimeoutMs: 20 })).resolves.toBeUndefined()
+
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/login')
+    expect(session.user()).toBeNull()
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+    expect(count('POST', '/auth/token/revoke')).toBe(0)
+  })
+
   test('a protected request that fails during sign out does not start the session expired flow', async () => {
     const expiredNavigate = navigateSpy()
     unsubscribe = subscribeToSessionEnd(expiredNavigate, () => webhooksLocation)

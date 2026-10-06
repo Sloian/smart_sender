@@ -7,6 +7,12 @@ import { session } from './session'
 
 export type NavigateTo = (to: string) => Promise<void>
 
+export interface SignOutOptions {
+  revokeTimeoutMs?: number
+}
+
+const REVOKE_TIMEOUT_MS = 5_000
+
 export async function signIn(credentials: Credentials): Promise<Me> {
   const deviceSessionToken = await login(credentials)
   await issueSession(deviceSessionToken)
@@ -23,14 +29,14 @@ export async function endLocalSession(navigate: NavigateTo, to: string): Promise
 
 let pendingSignOut: Promise<void> | null = null
 
-async function runSignOut(navigate: NavigateTo): Promise<void> {
+async function runSignOut(navigate: NavigateTo, revokeTimeoutMs: number): Promise<void> {
   httpClient.invalidateSession()
-  await revokeSession().catch(() => undefined)
+  await revokeSession(AbortSignal.timeout(revokeTimeoutMs)).catch(() => undefined)
   await endLocalSession(navigate, LOGIN_PATH)
 }
 
-export function signOut(navigate: NavigateTo): Promise<void> {
-  pendingSignOut ??= runSignOut(navigate).finally(() => {
+export function signOut(navigate: NavigateTo, { revokeTimeoutMs = REVOKE_TIMEOUT_MS }: SignOutOptions = {}): Promise<void> {
+  pendingSignOut ??= runSignOut(navigate, revokeTimeoutMs).finally(() => {
     pendingSignOut = null
   })
   return pendingSignOut

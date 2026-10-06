@@ -33,9 +33,9 @@ export async function issueSession(deviceSessionToken: string): Promise<void> {
   await httpClient.request('/auth/token/issue', { method: 'POST', body })
 }
 
-export async function revokeSession(): Promise<void> {
+export async function revokeSession(signal?: AbortSignal): Promise<void> {
   const body: FingerprintRequest = { fingerprint: getFingerprint() }
-  await httpClient.request('/auth/token/revoke', { method: 'POST', body })
+  await httpClient.request('/auth/token/revoke', { method: 'POST', body, signal })
 }
 
 export function fetchMe(): Promise<Me> {
