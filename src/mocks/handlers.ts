@@ -53,6 +53,12 @@ const PAGE_SIZE = 10
 
 const parseIntParam = (value: string | null) => Number.parseInt(value ?? '', 10)
 
+function dropDeviceTokens(fingerprint: string) {
+  for (const [token, owner] of state.deviceTokens) {
+    if (owner === fingerprint) state.deviceTokens.delete(token)
+  }
+}
+
 function isHttpUrl(value: string): boolean {
   if (!URL.canParse(value)) return false
   const { protocol, hostname } = new URL(value)
@@ -76,6 +82,7 @@ export const handlers = [
     if (!FINGERPRINT_PATTERN.test(fingerprint)) {
       return validationError({ fingerprint: ['The fingerprint is invalid.'] })
     }
+    dropDeviceTokens(fingerprint)
     const deviceSessionToken = crypto.randomUUID()
     state.deviceTokens.set(deviceSessionToken, fingerprint)
     const response: LoginResponse = { device_session_token: deviceSessionToken }
@@ -107,10 +114,12 @@ export const handlers = [
     return emptyResponse(200)
   }),
 
-  http.post('*/auth/token/revoke', ({ request }) => {
+  http.post('*/auth/token/revoke', async ({ request }) => {
     const csrf = csrfFailure(request)
     if (csrf) return csrf
-    state.session = null
+    const fingerprint = asString((await readJson(request)).fingerprint)
+    dropDeviceTokens(fingerprint)
+    if (state.session?.fingerprint === fingerprint) state.session = null
     return emptyResponse(204)
   }),
 

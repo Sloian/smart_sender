@@ -197,6 +197,14 @@ describe('issue', () => {
     expect(errorOf(reused).payload?.device_session_token).toBeDefined()
   })
 
+  test('a new login invalidates the previous device token of that fingerprint', async () => {
+    const first = await obtainDeviceToken()
+    const second = await obtainDeviceToken()
+    expect((await issue(first)).status).toBe(422)
+    expect((await issue(second)).status).toBe(200)
+    expect(state.deviceTokens.size).toBe(0)
+  })
+
   test('issue with a different fingerprint returns 422', async () => {
     const response = await issue(await obtainDeviceToken(), OTHER_FINGERPRINT)
     expect(response.status).toBe(422)
@@ -293,6 +301,20 @@ describe('revoke', () => {
 
   test('revoke without a session returns 204', async () => {
     expect((await revoke()).status).toBe(204)
+  })
+
+  test('revoke with a different fingerprint leaves the session active', async () => {
+    await signIn()
+    expect((await revoke(OTHER_FINGERPRINT)).status).toBe(204)
+    expect((await me()).status).toBe(200)
+  })
+
+  test('revoke invalidates unused device tokens of that fingerprint', async () => {
+    const token = await obtainDeviceToken()
+    const otherToken = await obtainDeviceToken(OTHER_FINGERPRINT)
+    expect((await revoke()).status).toBe(204)
+    expect((await issue(token)).status).toBe(422)
+    expect((await issue(otherToken, OTHER_FINGERPRINT)).status).toBe(200)
   })
 })
 
