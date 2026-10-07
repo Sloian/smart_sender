@@ -40,8 +40,8 @@ export function LoginPage() {
   })
 
   return (
-    <Center mih="100vh">
-      <Paper withBorder p="xl" w={380}>
+    <Center mih="100vh" p="md">
+      <Paper withBorder p="xl" w="100%" maw={380}>
         <form onSubmit={(event) => void onSubmit(event)} noValidate>
           <Stack>
             <Title order={2}>Sign in</Title>

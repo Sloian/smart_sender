@@ -11,8 +11,8 @@ export function RouteError() {
   }, [error])
 
   return (
-    <Center mih="100vh">
-      <Paper withBorder p="xl" w={420}>
+    <Center mih="100vh" p="md">
+      <Paper withBorder p="xl" w="100%" maw={420}>
         <Stack>
           <Title order={2}>Something went wrong</Title>
           <Text>This page could not be shown. Please try again.</Text>

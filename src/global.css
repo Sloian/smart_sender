@@ -4,3 +4,34 @@
   outline: 2px solid var(--app-focus-ring-color);
   outline-offset: 2px;
 }
+
+@media (pointer: coarse) {
+  .mantine-Button-root {
+    --button-height-xs: 2.75rem;
+    --button-height-sm: 2.75rem;
+    --button-height-md: 2.75rem;
+  }
+
+  .mantine-Pagination-root {
+    --pagination-control-size: 2.75rem;
+  }
+
+  .mantine-CloseButton-root {
+    --cb-size: 2.75rem;
+  }
+
+  .mantine-Input-wrapper {
+    --input-height-sm: 2.75rem;
+    --input-right-section-width: 2.75rem;
+  }
+
+  .mantine-PasswordInput-root {
+    --psi-button-size-sm: 2.75rem;
+  }
+
+  .mantine-Anchor-root {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+}

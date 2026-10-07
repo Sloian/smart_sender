@@ -1,11 +1,12 @@
 import {
   Anchor,
-  Badge,
+  Box,
   Button,
   CloseButton,
   EmptyState,
   Group,
   Pagination,
+  Paper,
   Stack,
   Table,
   Text,
@@ -15,8 +16,10 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router'
+import type { Webhook } from '../api/contract'
 import { LoadError } from '../components/LoadError'
 import { LoadingState } from '../components/LoadingState'
+import { StatusBadge } from '../components/StatusBadge'
 import {
   editPath,
   FIRST_PAGE,
@@ -108,7 +111,7 @@ function WebhookListContent({
       return <PageNotFound params={params} lastPage={view.lastPage} />
     case 'rows':
       return (
-        <WebhookTable view={view} params={params} isPlaceholderData={isPlaceholderData} onPageChange={onPageChange} />
+        <WebhookRows view={view} params={params} isPlaceholderData={isPlaceholderData} onPageChange={onPageChange} />
       )
   }
 }
@@ -157,46 +160,22 @@ function PageNotFound({ params, lastPage }: { params: ListParams; lastPage: numb
   )
 }
 
-interface WebhookTableProps {
+interface WebhookRowsProps {
   view: RowsView
   params: ListParams
   isPlaceholderData: boolean
   onPageChange: (page: number) => void
 }
 
-function WebhookTable({ view, params, isPlaceholderData, onPageChange }: WebhookTableProps) {
+function WebhookRows({ view, params, isPlaceholderData, onPageChange }: WebhookRowsProps) {
   return (
     <>
-      <Table.ScrollContainer minWidth={640}>
-        <Table aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.6 : 1 }}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>URL</Table.Th>
-              <Table.Th>Status</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {view.rows.map((webhook) => (
-              <Table.Tr key={webhook.id}>
-                <Table.Td>
-                  <Anchor component={Link} to={editPath(webhook.id, params)} state={FROM_LIST_STATE}>
-                    {webhook.name}
-                  </Anchor>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" ff="monospace" truncate>
-                    {webhook.url}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <StatusBadge active={webhook.active} />
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      <Box aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.6 : 1 }}>
+        <Box visibleFrom="sm">
+          <WebhookTable rows={view.rows} params={params} />
+        </Box>
+        <WebhookCardList rows={view.rows} params={params} />
+      </Box>
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
           {`Showing ${view.from}–${view.to} of ${view.total}`}
@@ -207,17 +186,66 @@ function WebhookTable({ view, params, isPlaceholderData, onPageChange }: Webhook
   )
 }
 
-function StatusBadge({ active }: { active: boolean }) {
-  if (active) {
-    return (
-      <Badge color="green" variant="light">
-        Active
-      </Badge>
-    )
-  }
+interface WebhookRowListProps {
+  rows: Webhook[]
+  params: ListParams
+}
+
+function WebhookTable({ rows, params }: WebhookRowListProps) {
   return (
-    <Badge color="gray" variant="light">
-      Inactive
-    </Badge>
+    <Table.ScrollContainer minWidth={640}>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Name</Table.Th>
+            <Table.Th>URL</Table.Th>
+            <Table.Th>Status</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {rows.map((webhook) => (
+            <Table.Tr key={webhook.id}>
+              <Table.Td>
+                <WebhookNameLink webhook={webhook} params={params} />
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm" ff="monospace" truncate>
+                  {webhook.url}
+                </Text>
+              </Table.Td>
+              <Table.Td>
+                <StatusBadge active={webhook.active} />
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
+function WebhookCardList({ rows, params }: WebhookRowListProps) {
+  return (
+    <Stack role="list" gap="xs" hiddenFrom="sm">
+      {rows.map((webhook) => (
+        <Paper key={webhook.id} role="listitem" withBorder p="sm">
+          <Group justify="space-between" wrap="nowrap" gap="sm">
+            <WebhookNameLink webhook={webhook} params={params} />
+            <StatusBadge active={webhook.active} />
+          </Group>
+          <Text size="sm" ff="monospace" c="dimmed" truncate>
+            {webhook.url}
+          </Text>
+        </Paper>
+      ))}
+    </Stack>
+  )
+}
+
+function WebhookNameLink({ webhook, params }: { webhook: Webhook; params: ListParams }) {
+  return (
+    <Anchor component={Link} to={editPath(webhook.id, params)} state={FROM_LIST_STATE}>
+      {webhook.name}
+    </Anchor>
   )
 }
