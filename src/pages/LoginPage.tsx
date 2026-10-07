@@ -11,7 +11,7 @@ import { applyServerErrors } from '../lib/server-errors'
 
 const loginSchema = z.object({
   email: z.email('Enter a valid email'),
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, 'Enter your password'),
 })
 
 type LoginValues = z.infer<typeof loginSchema>
@@ -50,7 +50,7 @@ export function LoginPage() {
             <PageHeading>Sign in to Smart Sender</PageHeading>
             {sessionExpired && (
               <Alert color="yellow" title="Session expired">
-                Your session has expired. Please sign in again.
+                Sign in again to continue. You'll return to the page you were on.
               </Alert>
             )}
             {errors.root?.server && <Alert color="red">{errors.root.server.message}</Alert>}

@@ -59,8 +59,7 @@ export function WebhooksPage() {
       <PageTitle title={listPageTitle(params.page)} />
       <PageHeading>Webhooks</PageHeading>
       <TextInput
-        aria-label="Search webhooks by name"
-        placeholder="Search by name"
+        label="Search by name"
         value={searchValue}
         onChange={(event) => {
           changeSearch(event.currentTarget.value)

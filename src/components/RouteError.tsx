@@ -1,4 +1,4 @@
-import { Button, Center, Paper, Stack, Text } from '@mantine/core'
+import { Button, Center, Group, Paper, Stack, Text } from '@mantine/core'
 import { useEffect } from 'react'
 import { Link, useRouteError } from 'react-router'
 import { DEFAULT_REDIRECT } from '../auth/redirect'
@@ -12,16 +12,23 @@ export function RouteError() {
     console.error(error)
   }, [error])
 
+  function reload() {
+    window.location.reload()
+  }
+
   return (
     <Center mih="100vh" p="md">
       <PageTitle title="Something went wrong" />
       <Paper withBorder p="xl" w="100%" maw={420}>
         <Stack>
           <PageHeading>Something went wrong</PageHeading>
-          <Text>This page could not be shown. Please try again.</Text>
-          <Button component={Link} to={DEFAULT_REDIRECT} replace>
-            Back to webhooks
-          </Button>
+          <Text>This page couldn't load.</Text>
+          <Group>
+            <Button onClick={reload}>Reload</Button>
+            <Button component={Link} to={DEFAULT_REDIRECT} replace variant="default">
+              Back to webhooks
+            </Button>
+          </Group>
         </Stack>
       </Paper>
     </Center>

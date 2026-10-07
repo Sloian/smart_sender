@@ -39,6 +39,8 @@ describe('RouteError', () => {
     expect(html).toContain('Something went wrong')
     expect(html).toContain('<title>Something went wrong · Smart Sender</title>')
     expect(html).toContain('<h1')
+    expect(html).toContain('This page couldn&#x27;t load.')
+    expect(html).toContain('>Reload<')
     expect(html).toContain('href="/webhooks"')
     expect(html).not.toContain('Unexpected Application Error')
     expect(html).not.toContain('loader failed')

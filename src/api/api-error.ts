@@ -2,9 +2,9 @@ import { errorEnvelopeSchema, errorTypes, type ErrorType, type FieldErrors } fro
 
 export type ApiErrorType = ErrorType | 'UnknownError'
 
-export const API_UNAVAILABLE_MESSAGE = 'API is unavailable. Reload the page and try again.'
+export const API_UNAVAILABLE_MESSAGE = "Can't reach the server. Reload the page to try again."
 
-export const GENERIC_ERROR = 'Something went wrong. Please try again.'
+export const GENERIC_ERROR = 'Something went wrong. Try again.'
 
 function toErrorType(type: string): ApiErrorType {
   const known = errorTypes.find((candidate) => candidate === type)

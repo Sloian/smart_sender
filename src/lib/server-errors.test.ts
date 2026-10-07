@@ -90,7 +90,7 @@ describe('applyServerErrors', () => {
   test('a network failure shows the generic message', () => {
     const setError = apply(new TypeError('Failed to fetch'))
 
-    expect(GENERIC_ERROR).toBe('Something went wrong. Please try again.')
+    expect(GENERIC_ERROR).toBe('Something went wrong. Try again.')
     expect(setError).toHaveBeenCalledTimes(1)
     expect(setError).toHaveBeenCalledWith('root.server', { type: 'server', message: GENERIC_ERROR })
   })
