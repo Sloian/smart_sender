@@ -58,6 +58,7 @@ The tests run in Node against the same MSW handlers the browser uses and assert 
   - Forms use react-hook-form.
   - Server 422 `payload` errors are shown under the matching fields (`src/lib/server-errors.ts`). Other errors appear in a form-level alert.
   - Every non-2xx response becomes a typed `ApiError`.
+- **UI.** A Mantine theme with WCAG AA contrast in light and dark mode (follows the system setting); below 768 px the list switches to stacked cards.
 - **Typing.**
   - TypeScript runs with `strict` and `noUncheckedIndexedAccess`; ESLint uses `strictTypeChecked`.
   - API types are inferred from the zod schemas in `src/api/contract.ts`, and response data is validated against them.
@@ -68,5 +69,5 @@ The tests run in Node against the same MSW handlers the browser uses and assert 
 - The mock is always on, including in the production build. A real deployment would put it behind an env flag and use a real API.
 - The session does not survive a reload because the mock resets. The task allows this.
 - The repo has no browser or E2E tests, and page components are not rendered in tests. Browser flows were checked by hand with Playwright.
-- When Chrome restarts the idle mock service worker, a request in the next 5 s can miss the mock. The login form then shows "API is unavailable", and a reload fixes it.
+- When Chrome restarts the idle mock service worker, a request in the next 5 s can miss the mock. The login form then shows "Can't reach the server", and a reload fixes it.
 - There is no route-level code splitting, so `npm run build` warns about a chunk larger than 500 kB.
