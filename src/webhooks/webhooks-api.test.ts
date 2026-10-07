@@ -107,7 +107,7 @@ describe('fetchWebhook', () => {
     expect(webhook).toEqual({
       id: 5,
       name: 'Payment hook 5',
-      url: 'https://example.com/hooks/5',
+      url: 'https://billing.example.com/webhooks/payments/5',
       active: true,
       created_at: '2026-01-05T00:00:00.000Z',
     })

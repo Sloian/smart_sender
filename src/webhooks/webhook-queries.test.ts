@@ -157,7 +157,7 @@ describe('webhookQuery', () => {
 
     const result = await client.query(webhookQuery(5))
 
-    expect(result).toMatchObject({ id: 5, name: 'Payment hook 5', url: 'https://example.com/hooks/5' })
+    expect(result).toMatchObject({ id: 5, name: 'Payment hook 5', url: 'https://billing.example.com/webhooks/payments/5' })
     client.clear()
   })
 })

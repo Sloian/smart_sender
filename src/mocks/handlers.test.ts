@@ -359,7 +359,7 @@ const updateWebhook = (id: string, body: unknown, csrf?: string | false) =>
 const SEED_ONE = {
   id: 1,
   name: 'Lead hook 1',
-  url: 'https://example.com/hooks/1',
+  url: 'https://crm.example.com/webhooks/leads/1',
   active: true,
   created_at: '2026-01-01T00:00:00.000Z',
 }

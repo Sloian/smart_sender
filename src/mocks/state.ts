@@ -24,16 +24,21 @@ interface MockState {
   clockOffsetMs: number
 }
 
-const seedNames = ['Order', 'Lead', 'Payment'] as const
+const seedKinds = [
+  { name: 'Order', endpoint: 'https://shop.example.com/webhooks/orders' },
+  { name: 'Lead', endpoint: 'https://crm.example.com/webhooks/leads' },
+  { name: 'Payment', endpoint: 'https://billing.example.com/webhooks/payments' },
+] as const
 
 function seedWebhooks(): Webhook[] {
   return Array.from({ length: 28 }, (_, index) => {
     const id = index + 1
     const createdAt = new Date(Date.UTC(2026, 0, id))
+    const kind = seedKinds[id % seedKinds.length] ?? seedKinds[0]
     return {
       id,
-      name: `${seedNames[id % 3] ?? 'Order'} hook ${id}`,
-      url: `https://example.com/hooks/${id}`,
+      name: `${kind.name} hook ${id}`,
+      url: `${kind.endpoint}/${id}`,
       active: id % 4 !== 0,
       created_at: createdAt.toISOString(),
     }
