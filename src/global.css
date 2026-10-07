@@ -32,6 +32,7 @@
   .mantine-Anchor-root {
     display: inline-flex;
     align-items: center;
+    column-gap: 0.25em;
     min-height: 2.75rem;
   }
 }
