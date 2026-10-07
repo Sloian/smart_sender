@@ -1,10 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Alert, Button, Center, Paper, PasswordInput, Stack, TextInput, Title } from '@mantine/core'
+import { Alert, Button, Center, Paper, PasswordInput, Stack, TextInput } from '@mantine/core'
 import { useForm } from 'react-hook-form'
 import { useNavigate, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { signIn } from '../auth/auth-service'
 import { REASON_PARAM, REDIRECT_PARAM, SESSION_EXPIRED_REASON, safeRedirectPath } from '../auth/redirect'
+import { PageHeading } from '../components/PageHeading'
+import { PageTitle } from '../components/PageTitle'
 import { applyServerErrors } from '../lib/server-errors'
 
 const loginSchema = z.object({
@@ -41,10 +43,11 @@ export function LoginPage() {
 
   return (
     <Center mih="100vh" p="md">
+      <PageTitle title="Sign in" />
       <Paper withBorder p="xl" w="100%" maw={380}>
         <form onSubmit={(event) => void onSubmit(event)} noValidate>
           <Stack>
-            <Title order={2}>Sign in</Title>
+            <PageHeading>Sign in to Smart Sender</PageHeading>
             {sessionExpired && (
               <Alert color="yellow" title="Session expired">
                 Your session has expired. Please sign in again.

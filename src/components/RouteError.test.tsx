@@ -37,6 +37,8 @@ describe('RouteError', () => {
     const html = await renderAfterLoaderError()
 
     expect(html).toContain('Something went wrong')
+    expect(html).toContain('<title>Something went wrong · Smart Sender</title>')
+    expect(html).toContain('<h1')
     expect(html).toContain('href="/webhooks"')
     expect(html).not.toContain('Unexpected Application Error')
     expect(html).not.toContain('loader failed')

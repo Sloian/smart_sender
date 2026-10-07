@@ -1,4 +1,4 @@
-import { Alert, Button, EmptyState, Group, Stack, TextInput, Title } from '@mantine/core'
+import { Alert, Button, EmptyState, Group, Stack, TextInput } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
@@ -6,6 +6,8 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import type { Webhook } from '../api/contract'
 import { LoadError } from '../components/LoadError'
 import { LoadingState } from '../components/LoadingState'
+import { PageHeading } from '../components/PageHeading'
+import { PageTitle } from '../components/PageTitle'
 import { applyServerErrors } from '../lib/server-errors'
 import { isFromList, listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
 import { applyWebhookUpdate, webhookDetailView, webhookQuery } from '../webhooks/webhook-queries'
@@ -24,7 +26,8 @@ export function WebhookEditPage() {
 
   return (
     <Stack maw={560}>
-      <Title order={2}>Edit webhook</Title>
+      <PageTitle title="Edit webhook" />
+      <PageHeading>Edit webhook</PageHeading>
       <WebhookEditContent id={id} backTo={backTo} />
     </Stack>
   )

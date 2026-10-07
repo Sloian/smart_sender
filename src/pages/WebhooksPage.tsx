@@ -11,7 +11,7 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
+  VisuallyHidden,
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -19,6 +19,8 @@ import { Link, Navigate, useSearchParams } from 'react-router'
 import type { Webhook } from '../api/contract'
 import { LoadError } from '../components/LoadError'
 import { LoadingState } from '../components/LoadingState'
+import { PageHeading } from '../components/PageHeading'
+import { PageTitle } from '../components/PageTitle'
 import { StatusBadge } from '../components/StatusBadge'
 import {
   editPath,
@@ -29,6 +31,7 @@ import {
   toSearchParams,
   type ListParams,
 } from '../webhooks/list-params'
+import { listAnnouncement, listPageTitle } from '../webhooks/list-text'
 import { useListSearch } from '../webhooks/use-list-search'
 import { webhookListQuery, webhookListView, type WebhookListView } from '../webhooks/webhook-queries'
 
@@ -40,6 +43,7 @@ export function WebhooksPage() {
   const { data, error, isPlaceholderData, isFetching, refetch } = useQuery(webhookListQuery(params))
   const view = webhookListView({ data, error, isPlaceholderData, page: params.page })
   const { searchValue, changeSearch, clearSearch } = useListSearch(params.search)
+  const announcement = listAnnouncement({ view, page: params.page, isPlaceholderData })
 
   function retry() {
     void refetch()
@@ -52,7 +56,8 @@ export function WebhooksPage() {
 
   return (
     <Stack>
-      <Title order={2}>Webhooks</Title>
+      <PageTitle title={listPageTitle(params.page)} />
+      <PageHeading>Webhooks</PageHeading>
       <TextInput
         aria-label="Search webhooks by name"
         placeholder="Search by name"
@@ -63,6 +68,7 @@ export function WebhooksPage() {
         rightSectionPointerEvents="all"
         rightSection={clearSearchButton(searchValue, clearSearch)}
       />
+      <VisuallyHidden role="status">{announcement}</VisuallyHidden>
       <WebhookListContent
         view={view}
         params={params}

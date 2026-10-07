@@ -1,8 +1,9 @@
-import { AppShell, Button, Group, Text, Title } from '@mantine/core'
+import { AppShell, Button, Group, Text } from '@mantine/core'
 import { useState } from 'react'
 import { Outlet, useLoaderData, useNavigate } from 'react-router'
 import { signOut } from '../auth/auth-service'
 import type { requireUser } from '../auth/route-guards'
+import { APP_NAME } from '../lib/document-title'
 
 export function AppLayout() {
   const user = useLoaderData<typeof requireUser>()
@@ -24,7 +25,9 @@ export function AppLayout() {
     <AppShell header={{ height: 60 }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Title order={4}>Smart Sender</Title>
+          <Text fz="h4" lh="h4" fw={700}>
+            {APP_NAME}
+          </Text>
           <Group gap="sm" wrap="nowrap" miw={0}>
             <Text size="sm" truncate>
               {user.name}
