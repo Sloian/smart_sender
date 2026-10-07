@@ -1,21 +1,32 @@
-import { Alert, Button, EmptyState, Group, Stack, TextInput } from '@mantine/core'
+import { Alert, Anchor, Box, Button, EmptyState, Group, Stack, Text, TextInput } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type SubmitEvent } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import type { Webhook } from '../api/contract'
 import { LoadError } from '../components/LoadError'
 import { LoadingState } from '../components/LoadingState'
 import { PageHeading } from '../components/PageHeading'
 import { PageTitle } from '../components/PageTitle'
+import { StatusBadge } from '../components/StatusBadge'
+import { isPlainLeftClick } from '../lib/plain-click'
 import { applyServerErrors } from '../lib/server-errors'
-import { isFromList, listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
-import { applyWebhookUpdate, webhookDetailView, webhookQuery } from '../webhooks/webhook-queries'
+import { editPageHeading, editPageTitle, formatCreatedDate } from '../webhooks/edit-text'
+import { listPath, parseListParams, parseWebhookId } from '../webhooks/list-params'
+import { useLeaveEdit } from '../webhooks/use-leave-edit'
+import {
+  applyWebhookUpdate,
+  webhookDetailView,
+  webhookQuery,
+  type WebhookDetailView,
+} from '../webhooks/webhook-queries'
 import { updateWebhook } from '../webhooks/webhooks-api'
 
 type EditValues = Pick<Webhook, 'name' | 'url'>
 
 const EDIT_FIELDS = ['name', 'url'] as const
+
+const NOT_FOUND_VIEW: WebhookDetailView = { kind: 'not-found' }
 
 export function WebhookEditPage() {
   const { id: rawId } = useParams()
@@ -24,18 +35,77 @@ export function WebhookEditPage() {
   const backTo = listPath(listParams)
   const id = parseWebhookId(rawId)
 
+  if (id === null) {
+    return (
+      <EditPageLayout view={NOT_FOUND_VIEW} backTo={backTo} submitting={false}>
+        <WebhookNotFound backTo={backTo} />
+      </EditPageLayout>
+    )
+  }
+  return <WebhookEditor key={id} id={id} backTo={backTo} />
+}
+
+interface EditPageLayoutProps {
+  view: WebhookDetailView
+  backTo: string
+  submitting: boolean
+  children: ReactNode
+}
+
+function EditPageLayout({ view, backTo, submitting, children }: EditPageLayoutProps) {
+  const leave = useLeaveEdit(backTo)
+
   return (
     <Stack maw={560}>
-      <PageTitle title="Edit webhook" />
-      <PageHeading>Edit webhook</PageHeading>
-      <WebhookEditContent id={id} backTo={backTo} />
+      <PageTitle title={editPageTitle(view)} />
+      <BackToListLink href={backTo} disabled={submitting} onLeave={leave} />
+      <PageHeading>{editPageHeading(view)}</PageHeading>
+      <WebhookFacts view={view} />
+      {children}
     </Stack>
   )
 }
 
-function WebhookEditContent({ id, backTo }: { id: number | null; backTo: string }) {
-  if (id === null) return <WebhookNotFound backTo={backTo} />
-  return <WebhookEditor key={id} id={id} backTo={backTo} />
+interface BackToListLinkProps {
+  href: string
+  disabled: boolean
+  onLeave: () => Promise<void>
+}
+
+function BackToListLink({ href, disabled, onLeave }: BackToListLinkProps) {
+  const linkColor = disabled ? 'dimmed' : undefined
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (disabled) {
+      event.preventDefault()
+      return
+    }
+    if (!isPlainLeftClick(event)) return
+    event.preventDefault()
+    void onLeave()
+  }
+
+  return (
+    <Box>
+      <Anchor href={href} size="sm" aria-disabled={disabled} c={linkColor} onClick={handleClick}>
+        <span aria-hidden="true">‹ </span>
+        Webhooks
+      </Anchor>
+    </Box>
+  )
+}
+
+function WebhookFacts({ view }: { view: WebhookDetailView }) {
+  if (view.kind !== 'ready') return null
+  const created = formatCreatedDate(view.webhook.created_at)
+  return (
+    <Group gap="sm">
+      <StatusBadge active={view.webhook.active} />
+      <Text size="sm" c="dimmed">
+        {`Created ${created}`}
+      </Text>
+    </Group>
+  )
 }
 
 function WebhookNotFound({ backTo }: { backTo: string }) {
@@ -53,11 +123,34 @@ function WebhookNotFound({ backTo }: { backTo: string }) {
 function WebhookEditor({ id, backTo }: { id: number; backTo: string }) {
   const { data, error, isFetching, refetch } = useQuery(webhookQuery(id))
   const view = webhookDetailView({ data, error })
+  const [submitting, setSubmitting] = useState(false)
 
   function retry() {
     void refetch()
   }
 
+  return (
+    <EditPageLayout view={view} backTo={backTo} submitting={submitting}>
+      <WebhookEditBody
+        view={view}
+        backTo={backTo}
+        retrying={isFetching}
+        onRetry={retry}
+        onSubmittingChange={setSubmitting}
+      />
+    </EditPageLayout>
+  )
+}
+
+interface WebhookEditBodyProps {
+  view: WebhookDetailView
+  backTo: string
+  retrying: boolean
+  onRetry: () => void
+  onSubmittingChange: (submitting: boolean) => void
+}
+
+function WebhookEditBody({ view, backTo, retrying, onRetry, onSubmittingChange }: WebhookEditBodyProps) {
   switch (view.kind) {
     case 'loading':
       return <LoadingState label="Loading webhook…" />
@@ -65,17 +158,23 @@ function WebhookEditor({ id, backTo }: { id: number; backTo: string }) {
       return <WebhookNotFound backTo={backTo} />
     case 'error':
       return (
-        <LoadError title="Could not load the webhook" message={view.message} retrying={isFetching} onRetry={retry} />
+        <LoadError title="Could not load the webhook" message={view.message} retrying={retrying} onRetry={onRetry} />
       )
     case 'ready':
-      return <WebhookEditForm webhook={view.webhook} backTo={backTo} />
+      return <WebhookEditForm webhook={view.webhook} backTo={backTo} onSubmittingChange={onSubmittingChange} />
   }
 }
 
-function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string }) {
+interface WebhookEditFormProps {
+  webhook: Webhook
+  backTo: string
+  onSubmittingChange: (submitting: boolean) => void
+}
+
+function WebhookEditForm({ webhook, backTo, onSubmittingChange }: WebhookEditFormProps) {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   const location = useLocation()
+  const leave = useLeaveEdit(backTo)
   const activeKey = useRef<string | null>(location.key)
   const {
     register,
@@ -89,6 +188,10 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
       applyWebhookUpdate(queryClient, updated)
     },
   })
+
+  useEffect(() => {
+    onSubmittingChange(isSubmitting)
+  }, [isSubmitting, onSubmittingChange])
 
   useEffect(() => {
     activeKey.current = location.key
@@ -112,15 +215,13 @@ function WebhookEditForm({ webhook, backTo }: { webhook: Webhook; backTo: string
     if (isStillOnSubmittedEntry(submittedFrom)) await leave()
   }
 
-  async function leave() {
-    if (isFromList(location.state)) await navigate(-1)
-    else await navigate(backTo, { replace: true })
+  function handleFormSubmit(event: SubmitEvent<HTMLFormElement>) {
+    const onSubmit = handleSubmit(submit)
+    void onSubmit(event)
   }
 
-  const onSubmit = handleSubmit(submit)
-
   return (
-    <form onSubmit={(event) => void onSubmit(event)} noValidate>
+    <form onSubmit={handleFormSubmit} noValidate>
       <Stack>
         {errors.root?.server && <Alert color="red">{errors.root.server.message}</Alert>}
         <TextInput label="Name" autoComplete="off" error={errors.name?.message} {...register('name')} />
