@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router/dom'
 import { subscribeToSessionEnd, type NavigateTo } from './auth/auth-service'
 import { queryClient } from './query-client'
 import { router } from './router'
+import { cssVariablesResolver, theme } from './theme'
 
 export function App() {
   useEffect(() => {
@@ -14,7 +15,7 @@ export function App() {
   }, [])
 
   return (
-    <MantineProvider>
+    <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>

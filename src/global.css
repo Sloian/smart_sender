@@ -1,0 +1,6 @@
+.mantine-focus-auto:focus-visible,
+.mantine-Input-input:focus,
+.mantine-Input-input:focus-within {
+  outline: 2px solid var(--app-focus-ring-color);
+  outline-offset: 2px;
+}
